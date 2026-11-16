@@ -69,11 +69,12 @@ export function onReply(ui: Any, reply: Any) {
   const tag: string = reply.tag ?? ''
   if (!reply.ok) {
     ui.notice = String(reply.error ?? 'failed').split('\n').slice(0, 3).join(' ')
+    if (tag.startsWith('detail:') && sameItem(tag.slice(7), ui.detailKey)) ui.detail = { key: tag.slice(7), error: `Could not load this diff: ${ui.notice}` }
     if (tag === '' || tag === 'm') ui.log.push({ t: stamp, text: reply.label || reply.method, ok: false, err: ui.notice })
     return
   }
   if (tag.startsWith('detail:')) {
-    if (tag.slice(7) === ui.detailKey) ui.detail = { key: tag.slice(7), ...(reply.data ?? {}) }
+    if (sameItem(tag.slice(7), ui.detailKey)) ui.detail = { key: tag.slice(7), ...(reply.data ?? {}) }
   } else if (tag === 'more') {
     ui.more = [...(ui.more ?? []), ...(reply.data?.commits ?? [])]
     ui.hasMore = reply.data?.hasMore === true
@@ -140,14 +141,18 @@ function itemKey(it: Any) {
   return it === null || it === undefined ? '' : it.kind === 'file' ? `f|${it.path}` : `${it.kind}|${it.key}`
 }
 
+// A detail key is `item|group|rev`; a reply for the same item still counts after the rev moved on.
+const sameItem = (a: string, b: string) => a.slice(0, a.lastIndexOf('|')) === b.slice(0, b.lastIndexOf('|'))
+
 function loadDetail(c: Any, force = false) {
   const { ui, props } = c
   const it = ui.sel
   const key = `${itemKey(it)}|${it?.group ?? ''}|${props.rev}`
   if (!force && key === ui.detailKey) return
+  const sameAsBefore = ui.detailKey !== '' && sameItem(key, ui.detailKey)
   ui.detailKey = key
   if (it === null || it === undefined) { ui.detail = null; return }
-  ui.detail = { key, kind: 'loading' }
+  if (!(sameAsBefore && ui.detail && ui.detail.kind !== 'loading' && !ui.detail.error)) ui.detail = { key, kind: 'loading' }
   let method = ''
   let request: Any = {}
   if (it.kind === 'file') {
@@ -362,13 +367,16 @@ function ChangesList(c: Any) {
     const on = itemKey(ui.sel) === itemKey(f)
     return (
       <Box key={`row-${f.path}`} flexDirection="row" alignItems="center" gap={1} paddingX={1} backgroundColor={on ? 'promptBorder' : undefined}>
-        <Button key={`chk-${f.path}`} plain onPress={() => (f.staged && !f.unstaged ? A.unstage(c, [f.path]) : A.stage(c, [f.path]))}><Text color={f.staged ? 'claude' : 'subtle'} size="heading">{box(f)}</Text></Button>
-        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+        <Box width={3} flexShrink={0} alignItems="center"><Button key={`chk-${f.path}`} plain onPress={() => (f.staged && !f.unstaged ? A.unstage(c, [f.path]) : A.stage(c, [f.path]))}><Text color={f.staged ? 'claude' : 'subtle'} size="heading">{box(f)}</Text></Button></Box>
+        <Box width="45%" flexShrink={0} overflow="hidden">
           <Button key={`sel-${f.path}`} plain onPress={() => selectItem(c, f)}>
-            <Text wrap="truncate-end"><Text weight={on ? 'semibold' : 'medium'}>{name}</Text>{dir ? <Text color="subtle" size="footnote">{`  ${dir}`}</Text> : null}</Text>
+            <Text wrap="truncate-end" weight={on ? 'semibold' : 'medium'}>{name}</Text>
           </Button>
         </Box>
-        <Text color={STATUS_COLOR[l] ?? 'subtle'} weight="semibold">{STATUS_ICON[l] ?? '◼'}</Text>
+        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+          <Text color="subtle" size="footnote" wrap="truncate-start">{dir}</Text>
+        </Box>
+        <Box width={3} flexShrink={0} alignItems="center"><Text color={STATUS_COLOR[l] ?? 'subtle'} weight="semibold">{STATUS_ICON[l] ?? '◼'}</Text></Box>
       </Box>
     )
   })
@@ -752,9 +760,9 @@ export function GitView(E: Any, props: Any, ui: Any, act: Any) {
         </Box>
       ) : null}
       {ui.dialog ? Dialog(c) : null}
-      <Box flexDirection="row" gap={2} alignItems="flex-start">
-        <Box flexDirection="column" width="38%" gap={1} overflow="hidden">{ui.tab === 'changes' ? ChangesList(c) : ListTab(c)}</Box>
-        <Box flexDirection="column" flexGrow={1}>{Detail(c)}</Box>
+      <Box flexDirection="row" gap={2} alignItems="flex-start" width="100%" overflow="hidden">
+        <Box flexDirection="column" width="38%" minWidth="38%" flexGrow={0} flexShrink={0} gap={1} overflow="hidden">{ui.tab === 'changes' ? ChangesList(c) : ListTab(c)}</Box>
+        <Box flexDirection="column" width="58%" flexGrow={0} flexShrink={1} minWidth={0} overflow="hidden">{Detail(c)}</Box>
       </Box>
       {Activity(c)}
     </Box>

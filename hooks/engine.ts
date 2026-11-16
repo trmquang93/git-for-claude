@@ -561,6 +561,7 @@ export function createApi(io) {
       const result = await execGit(root, ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-index", `-U${String(context)}`, "--", nullDevice, relative], {
         allowCodes: [0, 1],
         maxBytes: 2 * 1024 * 1024,
+        timeoutMs: 90_000,
       });
       return {
         root,
@@ -575,7 +576,7 @@ export function createApi(io) {
     const argv = ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--no-renames", `-U${String(context)}`];
     if (request?.staged === true) argv.push("--cached");
     argv.push("--", path);
-    const result = await execGit(root, argv, { maxBytes: 2 * 1024 * 1024 });
+    const result = await execGit(root, argv, { maxBytes: 2 * 1024 * 1024, timeoutMs: 90_000 });
     return {
       root,
       path,
