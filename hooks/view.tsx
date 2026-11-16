@@ -429,7 +429,7 @@ function Sidebar(c: Any) {
         {SideItem(c, { id: 'history', label: 'All Commits', glyph: '☰', active: ui.tab === 'history', hotkey: '2', onPress: () => nav(c, 'history') })}
       </Box>
       <Box flexDirection="column" borderStyle="round" borderColor="promptBorder" />
-      {(snap.worktrees ?? []).length > 1 ? SideSection(c, 'sec-worktrees', 'Worktrees', null, true, () => (snap.worktrees ?? []).map((w: Any) => SideItem(c, { id: `3:${w.path}`, label: String(w.path).split('/').filter(Boolean).at(-1) ?? w.path, glyph: '▭', indent: 1, weight: w.isCurrent ? 'bold' : 'medium', active: activeKey('branches', 3) === w.path, onPress: () => nav(c, 'branches', 3, w.path) }))) : null}
+      {(snap.worktrees ?? []).length > 1 ? SideSection(c, 'sec-worktrees', 'Worktrees', null, true, () => (snap.worktrees ?? []).map((w: Any) => SideItem(c, { id: `3:${w.path}`, label: String(w.path).split('/').filter(Boolean).at(-1) ?? w.path, glyph: '▭', indent: 1, weight: w.isCurrent ? 'bold' : 'medium', active: activeKey('branches', 3) === w.path, onPress: () => { if (dbl(c, `wt:${w.path}`)) openRepo(c, w.path); else nav(c, 'branches', 3, w.path) } }))) : null}
       {SideSection(c, 'sec-branches', 'Branches', local.length, true, () => renderTree(c, nameTree(sorted.map((b: Any) => ({ name: b.name, data: b }))), 0, 'b/', branchLeaf(0), (n) => activeKey('branches', 0) === n))}
       {SideSection(c, 'sec-remotes', 'Remotes', remotes.length, true, () => remotes.flatMap((r: string) => {
         const id = `rm:${r}`
@@ -470,6 +470,20 @@ function nav(c: Any, tab: string, sub = 0, pick?: string) {
   c.redraw()
 }
 
+// Buttons have no double-click: two presses on the same id within 450 ms count as one.
+function dbl(c: Any, id: string): boolean {
+  const now = Date.now()
+  const last = c.ui.lastPress
+  const hit = last !== undefined && last !== null && last.id === id && now - last.t < 450
+  c.ui.lastPress = hit ? null : { id, t: now }
+  return hit
+}
+
+// Open another folder (a worktree) as its own repository tab; the current one stays as a tab.
+function openRepo(c: Any, dir: string) {
+  c.req('setDir', { dir }, 'quiet')
+}
+
 function goCommit(c: Any, hash: string) {
   const { ui, snap } = c
   const found = [...(snap.commits ?? []), ...(ui.more ?? [])].find((x: Any) => x.hash === hash)
@@ -488,7 +502,7 @@ function Row(c: Any, item: Any, left: Any[], right: Any = null) {
   return (
     <Box key={`row-${itemKey(item)}`} flexDirection="row" alignItems="center" gap={1} paddingX={1} backgroundColor={on ? 'promptBorder' : undefined}>
       <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-        <Button key={`sel-${itemKey(item)}`} plain onPress={() => selectItem(c, item)}><Text wrap="truncate-end">{left}</Text></Button>
+        <Button key={`sel-${itemKey(item)}`} plain onPress={() => { if (item.kind === 'worktree' && dbl(c, `wt:${item.key}`)) openRepo(c, item.w.path); else selectItem(c, item) }}><Text wrap="truncate-end">{left}</Text></Button>
       </Box>
       {right}
     </Box>
@@ -1027,7 +1041,7 @@ function Actions(c: Any, it: Any, d: Any) {
   } else if (it.kind === 'tag') {
     add('Checkout', () => c.m('checkout', { ref: it.key }, `git checkout ${it.key}`), 'primary'); add('Delete…', () => A.deleteTag(c, it))
   } else if (it.kind === 'worktree') {
-    add('Open here', () => c.req('setDir', { dir: it.w.path }, 'quiet'), 'primary')
+    add('Open in new tab', () => openRepo(c, it.w.path), 'primary')
     add('Move…', () => A.worktreeMove(c, it))
     if (it.w.locked) add('Unlock', () => c.m('unlockWorktree', { path: it.w.path }, `git worktree unlock ${it.w.path}`)); else add('Lock…', () => A.worktreeLock(c, it))
     add('Remove…', () => A.worktreeRemove(c, it))

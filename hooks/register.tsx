@@ -179,6 +179,7 @@ async function handle($: any, e: any, msg: any) {
         break
       case 'setDir': {
         snapDir = String(request.dir ?? '')
+        if (v.dir !== '' && v.dir !== snapDir) await rememberRepo($, v.dir)
         const st = await g.status({ dir: snapDir })
         if (st.isRepo !== false) await rememberRepo($, st.root)
         await update($, view, (cur: View) => ({ ...cur, dir: st.root ?? snapDir, image: null }))

@@ -12,6 +12,7 @@ let opened = 0
 const missing: string[] = []
 const calls: string[][] = []
 const stdins: string[] = []
+const stored: string[] = []
 let BIG = ''
 function answer(e: any) {
   const argv = e.argv
@@ -37,7 +38,7 @@ async function setup($: any, on: any) {
   on('fs.stat', () => ({ value: { kind: 'file', size: 70, mtimeMs: 0, isLink: false } }))
   on('fs.read', () => ({ value: { base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' } }))
   on('store.get', () => ({ value: [] }))
-  on('store.set', () => ({ value: undefined }))
+  on('store.set', (_: any, e: any) => { stored.push(JSON.stringify(e)); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'git' } }))
   on('ui.open', () => { opened += 1; return { value: { isPlaced: true } } })
   on('ui.status', () => ({ value: undefined }))
@@ -214,5 +215,21 @@ test('a large diff with long lines renders quickly', async ($, on) => {
   const n = (await ui.findAll({ type: 'Text' })).length
   console.log(`BIGDIFF select+render ${ms}ms, ${n} texts`)
   BIG = ''
+  await ui.unmount()
+})
+
+test('double press on a worktree opens it as a repository tab and keeps the current one', async ($, on) => {
+  stored.length = 0
+  await setup($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await settle(ui)
+  const btn = (await ui.findAll({ type: 'Button' })).find((b: any) => String(b.props?.key ?? '').startsWith('sib-3:'))
+  expect(btn).toBeTruthy()
+  const key = btn.props.key
+  await ui.press({ key })
+  expect(stored.length).toBe(0)
+  await ui.press({ key })
+  await settle(ui)
+  expect(stored.some(x => x.includes(FIX))).toBe(true)
   await ui.unmount()
 })
