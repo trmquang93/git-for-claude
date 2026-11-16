@@ -19,8 +19,12 @@ const BADGE_BG = '#ececf0'
 const BADGE_FG = '#1c1c1e'
 const TAG_BG = '#ffe28a'
 const TAG_FG = '#5c4300'
-const BADGE_STATUS: Any = { M: '#f5c542', A: '#3fb950', D: '#f85149', R: '#58a6ff', C: '#58a6ff', T: '#f5c542', U: '#f85149' }
-const STATUS_GLYPH: Any = { M: '⋯', A: '+', D: '−', R: '➜', C: '➜', T: '⋯', U: '!' }
+const BADGE_STATUS: Any = { '?': '#3fb950', M: '#f5c542', A: '#3fb950', D: '#f85149', R: '#58a6ff', C: '#58a6ff', T: '#f5c542', U: '#f85149' }
+const STATUS_GLYPH: Any = { '?': '+', M: '⋯', A: '+', D: '−', R: '➜', C: '➜', T: '⋯', U: '!' }
+const LANE_COLORS = ['#e5b80b', '#ef5350', '#3fb950', '#4c9aff', '#bf5af2', '#ff8c42', '#2ec4b6', '#f06292']
+const ROW_H = 28
+const LANE_W = 12
+const MAX_LANES = 8
 const AVATAR = ['#5e5ce6', '#bf5af2', '#c77700', '#1f8a9e', '#d6285a', '#2478b8', '#1f9d46']
 
 export function initUi(): Any {
@@ -425,10 +429,11 @@ function Sidebar(c: Any) {
         {SideItem(c, { id: 'history', label: 'All Commits', glyph: '☰', active: ui.tab === 'history', hotkey: '2', onPress: () => nav(c, 'history') })}
       </Box>
       <Box flexDirection="column" borderStyle="round" borderColor="promptBorder" />
+      {(snap.worktrees ?? []).length > 1 ? SideSection(c, 'sec-worktrees', 'Worktrees', null, true, () => (snap.worktrees ?? []).map((w: Any) => SideItem(c, { id: `3:${w.path}`, label: String(w.path).split('/').filter(Boolean).at(-1) ?? w.path, glyph: '▭', indent: 1, weight: w.isCurrent ? 'bold' : 'medium', active: activeKey('branches', 3) === w.path, onPress: () => nav(c, 'branches', 3, w.path) }))) : null}
       {SideSection(c, 'sec-branches', 'Branches', local.length, true, () => renderTree(c, nameTree(sorted.map((b: Any) => ({ name: b.name, data: b }))), 0, 'b/', branchLeaf(0), (n) => activeKey('branches', 0) === n))}
       {SideSection(c, 'sec-remotes', 'Remotes', remotes.length, true, () => remotes.flatMap((r: string) => {
         const id = `rm:${r}`
-        const open = isOpen(ui, id, true)
+        const open = isOpen(ui, id, false)
         const items = remote.filter((b: Any) => b.remote === r).map((b: Any) => ({ name: b.branch, data: { ...b, name: b.name } }))
         const leaf = (l: Any, depth: number) => SideItem(c, { id: `1:${r}/${l.name}`, label: l.label, indent: depth + 1, glyph: '⑂', active: activeKey('branches', 1) === `${r}/${l.name}`, onPress: () => nav(c, 'branches', 1, `${r}/${l.name}`) })
         return [
@@ -437,8 +442,7 @@ function Sidebar(c: Any) {
         ]
       }))}
       {SideSection(c, 'sec-tags', 'Tags', (snap.tags ?? []).length, false, () => (snap.tags ?? []).map((t: Any) => SideItem(c, { id: `2:${t.name}`, label: t.name, glyph: '⌂', indent: 1, active: activeKey('branches', 2) === t.name, onPress: () => nav(c, 'branches', 2, t.name) })))}
-      {SideSection(c, 'sec-stashes', 'Stashes', (snap.stashes ?? []).length, false, () => (snap.stashes ?? []).map((st: Any) => SideItem(c, { id: `st:${st.ref}`, label: st.message || st.ref, glyph: '⧉', indent: 1, active: ui.tab === 'stash' && sel?.key === st.ref, hotkey: undefined, onPress: () => nav(c, 'stash', 0, st.ref) })))}
-      {SideSection(c, 'sec-worktrees', 'Worktrees', (snap.worktrees ?? []).length, false, () => (snap.worktrees ?? []).map((w: Any) => SideItem(c, { id: `3:${w.path}`, label: w.branch ?? '(detached)', glyph: '▭', indent: 1, active: activeKey('branches', 3) === w.path, onPress: () => nav(c, 'branches', 3, w.path) })))}
+      {SideSection(c, 'sec-stashes', 'Stashes', (snap.stashes ?? []).length, true, () => (snap.stashes ?? []).map((st: Any) => SideItem(c, { id: `st:${st.ref}`, label: st.message || st.ref, glyph: '⧉', indent: 1, active: ui.tab === 'stash' && sel?.key === st.ref, hotkey: undefined, onPress: () => nav(c, 'stash', 0, st.ref) })))}
       {SideSection(c, 'sec-reflog', 'Reflog', (snap.reflog ?? []).length, false, () => (snap.reflog ?? []).slice(0, 12).map((r: Any) => SideItem(c, { id: `4:${r.selector}`, label: `${r.selector} ${r.subject}`, glyph: '↺', indent: 1, active: activeKey('branches', 4) === r.selector, onPress: () => nav(c, 'branches', 4, r.selector) })))}
     </Box>
   )
@@ -491,67 +495,160 @@ function Row(c: Any, item: Any, left: Any[], right: Any = null) {
   )
 }
 
-function ChangesList(c: Any) {
-  const { Box, Text, Button, Input } = c.E
-  const { ui, snap } = c
-  const files = flatFiles(snap, ui)
-  const staged = files.filter((f) => f.staged)
-  const all = ui.showAll.files === true
-  const shown = all ? files : files.slice(0, 40)
-  const allStaged = files.length > 0 && files.every((f) => f.staged && !f.unstaged)
-  const someStaged = staged.length > 0
-  const box = (f: Any) => (f.staged && !f.unstaged ? '☑' : f.staged ? '▣' : '☐')
-  const rows: Any[] = shown.map((f: Any) => {
-    const { name, dir } = splitPath(f.path)
-    const l = f.group === 'staged' ? f.f.x : f.group === 'untracked' ? '?' : f.group === 'conflict' ? 'U' : f.f.y
-    const on = itemKey(ui.sel) === itemKey(f)
-    return (
-      <Box key={`row-${f.path}`} flexDirection="row" alignItems="center" gap={1} paddingX={1} backgroundColor={on ? 'promptBorder' : undefined}>
-        <Box width={3} flexShrink={0} alignItems="center"><Button key={`chk-${f.path}`} plain onPress={() => (f.staged && !f.unstaged ? A.unstage(c, [f.path]) : A.stage(c, [f.path]))}><Text color={f.staged ? 'claude' : 'subtle'} size="heading">{box(f)}</Text></Button></Box>
-        <Box width="45%" flexShrink={0} overflow="hidden">
-          <Button key={`sel-${f.path}`} plain onPress={() => selectItem(c, f)}>
-            <Text wrap="truncate-end" weight={on ? 'semibold' : 'medium'}>{name}</Text>
-          </Button>
+function fileItem(f: Any, group: string) {
+  const untracked = f.kind === 'untracked'
+  const conflict = f.kind === 'unmerged'
+  const staged = !untracked && !conflict && f.x !== '.'
+  const unstaged = untracked || conflict || f.y !== '.'
+  return { kind: 'file', group, path: f.path, f, staged, unstaged }
+}
+
+// Fork's Local Changes: an Unstaged and a Staged list, each a folder tree with a status badge per file.
+function FileSection(c: Any, group: 'unstaged' | 'staged', files: Any[]) {
+  const { Box, Text, Button } = c.E
+  const { ui } = c
+  const staged = group === 'staged'
+  const sfx = staged ? 's-' : ''
+  const items = files.map((f: Any) => fileItem(f, staged ? 'staged' : f.kind === 'untracked' ? 'untracked' : f.kind === 'unmerged' ? 'conflict' : 'unstaged')).sort((a: Any, b: Any) => a.path.localeCompare(b.path))
+  const paths = items.map((i: Any) => i.path)
+  const seen = new Set<string>()
+  const rows: Any[] = []
+  for (const it of items) {
+    const parts = it.path.split('/')
+    parts.slice(0, -1).forEach((seg: string, depth: number) => {
+      const id = parts.slice(0, depth + 1).join('/')
+      if (seen.has(id)) return
+      seen.add(id)
+      rows.push(<Box key={`dir-${group}-${id}`} flexDirection="row" gap={1} paddingLeft={5 + depth * 2}><Text color="subtle">▾ ▭</Text><Text weight="medium">{seg}</Text></Box>)
+    })
+    const depth = parts.length - 1
+    const l = staged ? it.f.x : it.group === 'untracked' ? '?' : it.group === 'conflict' ? 'U' : it.f.y
+    const on = ui.sel?.kind === 'file' && ui.sel.path === it.path && ui.sel.group === it.group
+    rows.push(
+      <Box key={`row-${group}-${it.path}`} flexDirection="row" alignItems="center" gap={1} paddingX={1} backgroundColor={on ? SEL_BG : undefined}>
+        {StatusBadge(c, `sb-${group}-${it.path}`, l)}
+        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden" paddingLeft={depth * 2}>
+          <Button key={`sel-${sfx}${it.path}`} plain onPress={() => selectItem(c, it)}><Text wrap="truncate-end" color={on ? SEL_FG : undefined} weight={on ? 'semibold' : 'medium'}>{parts[parts.length - 1]}</Text></Button>
         </Box>
-        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
-          <Text color="subtle" size="footnote" wrap="truncate-start">{dir}</Text>
-        </Box>
-        <Box width={3} flexShrink={0} alignItems="center"><Text color={STATUS_COLOR[l] ?? 'subtle'} weight="semibold">{STATUS_ICON[l] ?? '◼'}</Text></Box>
-      </Box>
+        <Button key={`chk-${sfx}${it.path}`} plain dimColor onPress={() => (staged ? A.unstage(c, [it.path]) : A.stage(c, [it.path]))}><Text color={on ? SEL_FG : 'subtle'} weight="bold">{staged ? '−' : '+'}</Text></Button>
+      </Box>,
     )
-  })
-  const n = files.length
+  }
+  const n = items.length
+  return (
+    <Box key={`sec-${group}`} flexDirection="column" borderStyle="round" borderColor="promptBorder" backgroundColor={SURFACE} overflow="hidden">
+      <Box flexDirection="row" alignItems="center" gap={2} paddingX={1} paddingY={1}>
+        <Text weight="semibold">{staged ? 'Staged' : 'Unstaged'}</Text>
+        {n > 0 ? <Text color="subtle" size="footnote">{String(n)}</Text> : null}
+        <Box flexGrow={1} />
+        {!staged && n > 0 ? <Button key="discard-all" plain dimColor onPress={() => { A.discardAll(c); c.redraw() }}>Discard all</Button> : null}
+        {n > 0
+          ? <Button key={staged ? 'unstage-all' : 'stage-all'} variant="secondary" onPress={() => (staged ? A.unstage(c, [], 'unstage all') : A.stage(c, paths, 'stage all'))}>{staged ? 'Unstage' : 'Stage'}</Button>
+          : <Text color="subtle">{staged ? 'Unstage' : 'Stage'}</Text>}
+      </Box>
+      {n === 0 ? <Box paddingX={2} paddingBottom={1}><Text color="subtle" size="footnote">{staged ? 'Nothing staged.' : 'Working tree clean.'}</Text></Box> : <Box flexDirection="column" paddingBottom={1}>{rows}</Box>}
+    </Box>
+  )
+}
+
+function ChangesList(c: Any) {
+  const { Box } = c.E
+  const files: Any[] = c.snap.status?.files ?? []
+  const real = (f: Any) => f.kind !== 'untracked' && f.kind !== 'unmerged'
+  const unstaged = files.filter((f: Any) => !real(f) || f.y !== '.')
+  const staged = files.filter((f: Any) => real(f) && f.x !== '.')
   return (
     <Box flexDirection="column" gap={1}>
-      <Box flexDirection="column" borderStyle="round" borderColor="promptBorder" backgroundColor={SURFACE} overflow="hidden">
-        <Box flexDirection="row" alignItems="center" gap={1} paddingX={1} paddingY={1}>
-          <Button key="chk-all" plain onPress={() => (allStaged ? A.unstage(c, [], 'unstage all') : A.stage(c, files.map((f: Any) => f.path), 'stage all'))}><Text color={someStaged ? 'claude' : 'subtle'} size="heading">{allStaged ? '☑' : someStaged ? '▣' : '☐'}</Text></Button>
-          <Text weight="semibold">{n === 0 ? 'No changes' : `${n} changed file${n === 1 ? '' : 's'}`}</Text>
-          <Box flexGrow={1} />
-          {n > 0 ? <Button key="discard-all" plain dimColor onPress={() => { A.discardAll(c); c.redraw() }}>Discard all</Button> : null}
-        </Box>
-        {n === 0 ? <Box padding={2}><Text color="subtle">Working tree clean. Nothing to commit.</Text></Box> : <Box flexDirection="column">{rows}</Box>}
-        {!all && files.length > 40 ? <Box paddingX={2} paddingY={1}><Button key="showall" plain dimColor onPress={() => { ui.showAll.files = true; c.redraw() }}>{`Show all ${files.length}`}</Button></Box> : null}
-        <Box paddingX={1} paddingY={1}>
-          <Button key="open-stash" plain dimColor hotkey="4" onPress={() => { nav(c, 'stash') }}>{`⧉ Stashed changes${(snap.stashes?.length ?? 0) > 0 ? `  ${snap.stashes.length}` : ''}  ›`}</Button>
-        </Box>
-      </Box>
-      <Box flexDirection="column" gap={1} borderStyle="round" borderColor="promptBorder" backgroundColor={SURFACE} padding={1}>
-        <Input key={`sum-${ui.commitN}`} placeholder="Summary (required)" value={ui.sum} onInput={(v: string) => { ui.sum = v }} onSubmit={(v: string) => { ui.sum = v; A.commit(c) }} />
-        <Input key={`desc-${ui.commitN}`} placeholder="Description" value={ui.desc} rows={4} onInput={(v: string) => { ui.desc = v }} onSubmit={(v: string) => { ui.desc = v }} />
-        <Box flexDirection="row" alignItems="center" gap={1}>
-          <Button key="amend" plain dimColor onPress={() => { ui.amend = !ui.amend; if (ui.amend) c.req('lastCommitMessage', {}, 'amendMsg'); c.redraw() }}>{ui.amend ? '☑ Amend previous commit' : '☐ Amend previous commit'}</Button>
-          <Box flexGrow={1} />
-          <Button key="stash" plain dimColor onPress={() => { A.stashNew(c); c.redraw() }}>Stash…</Button>
-        </Box>
-        <Button key="commit" variant="primary" hotkey="c" onPress={() => A.commit(c)}>{`${ui.amend ? 'Amend' : 'Commit'}${staged.length ? ` ${staged.length} file${staged.length === 1 ? '' : 's'}` : ''} to ${c.branch ?? 'HEAD'}`}</Button>
+      {FileSection(c, 'unstaged', unstaged)}
+      {FileSection(c, 'staged', staged)}
+    </Box>
+  )
+}
+
+function CommitBox(c: Any) {
+  const { Box, Text, Button, Input } = c.E
+  const { ui, snap } = c
+  const n = (snap.status?.files ?? []).filter((f: Any) => f.kind !== 'untracked' && f.kind !== 'unmerged' && f.x !== '.').length
+  return (
+    <Box flexDirection="column" gap={1} borderStyle="round" borderColor="promptBorder" backgroundColor={SURFACE} padding={1}>
+      <Input key={`sum-${ui.commitN}`} placeholder="Commit subject" value={ui.sum} onInput={(v: string) => { ui.sum = v }} onSubmit={(v: string) => { ui.sum = v; A.commit(c) }} />
+      <Input key={`desc-${ui.commitN}`} placeholder="Description" value={ui.desc} rows={3} onInput={(v: string) => { ui.desc = v }} onSubmit={(v: string) => { ui.desc = v }} />
+      <Box flexDirection="row" alignItems="center" gap={2}>
+        <Button key="amend" plain dimColor onPress={() => { ui.amend = !ui.amend; if (ui.amend) c.req('lastCommitMessage', {}, 'amendMsg'); c.redraw() }}>{ui.amend ? '☑ Amend' : '☐ Amend'}</Button>
         <Text color="subtle" size="caption">Commit hooks are skipped in this pane.</Text>
+        <Box flexGrow={1} />
+        <Button key="commit" variant="primary" hotkey="c" onPress={() => A.commit(c)}>{ui.amend ? 'Amend' : n > 0 ? `Commit ${n}` : 'Commit'}</Button>
       </Box>
     </Box>
   )
 }
 
-// Ref badges like Fork: `HEAD -> main` is the checked-out branch, `origin/x` a remote, `tag: v1` a tag.
+// ---------------------------------------------------------------- commit graph
+
+// Lane layout for the commit table, newest commit first. Each row gets the line
+// segments to draw (top half = coming from above, bottom half = going to parents).
+type Seg = { x1: number; y1: number; x2: number; y2: number; color: number; curve: boolean }
+export function layoutGraph(commits: Any[]) {
+  const lanes: (string | null)[] = []
+  const colors: number[] = []
+  let nextColor = 0
+  let maxLane = 0
+  const rows: Any[] = []
+  for (const cm of commits) {
+    const before = lanes.slice()
+    const beforeColors = colors.slice()
+    let idx = lanes.indexOf(cm.hash)
+    if (idx < 0) {
+      idx = lanes.indexOf(null)
+      if (idx < 0) { idx = lanes.length; lanes.push(null); colors.push(0) }
+      colors[idx] = nextColor++ % LANE_COLORS.length
+    }
+    const nodeColor = colors[idx]!
+    for (let i = 0; i < lanes.length; i += 1) if (lanes[i] === cm.hash) lanes[i] = null
+    const outs: { lane: number; color: number }[] = []
+    const parents: string[] = cm.parents ?? []
+    parents.forEach((ph, k) => {
+      const have = lanes.indexOf(ph)
+      if (have >= 0) { outs.push({ lane: have, color: colors[have]! }); return }
+      if (k === 0) { lanes[idx] = ph; outs.push({ lane: idx, color: nodeColor }); return }
+      let slot = lanes.indexOf(null)
+      if (slot < 0) { slot = lanes.length; lanes.push(null); colors.push(0) }
+      colors[slot] = nextColor++ % LANE_COLORS.length
+      lanes[slot] = ph
+      outs.push({ lane: slot, color: colors[slot]! })
+    })
+    while (lanes.length > 0 && lanes[lanes.length - 1] === null) { lanes.pop(); colors.pop() }
+    const segs: Seg[] = []
+    before.forEach((h, i) => {
+      if (h === null || h === undefined) return
+      if (h === cm.hash) segs.push({ x1: i, y1: 0, x2: idx, y2: 0.5, color: beforeColors[i]!, curve: i !== idx })
+      else segs.push({ x1: i, y1: 0, x2: i, y2: 1, color: beforeColors[i]!, curve: false })
+    })
+    for (const o of outs) segs.push({ x1: idx, y1: 0.5, x2: o.lane, y2: 1, color: o.color, curve: o.lane !== idx })
+    maxLane = Math.max(maxLane, idx, ...segs.map((x) => Math.max(x.x1, x.x2)))
+    rows.push({ idx, color: nodeColor, merge: parents.length > 1, segs })
+  }
+  return { rows, width: (Math.min(maxLane, MAX_LANES - 1) + 1) * LANE_W + 8 }
+}
+
+function graphSvg(g: Any, width: number, selected: boolean) {
+  const X = (lane: number) => 8 + Math.min(lane, MAX_LANES - 1) * LANE_W
+  const H = ROW_H
+  const col = (i: number) => LANE_COLORS[i % LANE_COLORS.length]
+  const parts: string[] = []
+  for (const sg of g.segs as Seg[]) {
+    const x1 = X(sg.x1); const y1 = sg.y1 * H; const x2 = X(sg.x2); const y2 = sg.y2 * H
+    const d = sg.curve ? `M${x1} ${y1} C${x1} ${(y1 + y2) / 2} ${x2} ${(y1 + y2) / 2} ${x2} ${y2}` : `M${x1} ${y1} L${x2} ${y2}`
+    parts.push(`<path d='${d}' stroke='${col(sg.color)}' stroke-width='1.6' fill='none' stroke-linecap='round'/>`)
+  }
+  const nx = X(g.idx)
+  const nc = col(g.color)
+  parts.push(g.merge
+    ? `<circle cx='${nx}' cy='${H / 2}' r='5.5' fill='${selected ? '#0a64d8' : '#2b2b2e'}' stroke='${nc}' stroke-width='1.6'/><path d='M${nx - 3} ${H / 2}H${nx + 3}M${nx} ${H / 2 - 3}V${H / 2 + 3}' stroke='${nc}' stroke-width='1.4'/>`
+    : `<circle cx='${nx}' cy='${H / 2}' r='4.2' fill='${nc}'/>`)
+  return `<svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${H}' viewBox='0 0 ${width} ${H}'>${parts.join('')}</svg>`
+}
+
 function parseRefs(deco: string, remotes: string[]) {
   const out: { tone: string; text: string }[] = []
   for (const raw of String(deco ?? '').replace(/^\s*\(|\)\s*$/g, '').split(',').map((x) => x.trim()).filter(Boolean)) {
@@ -563,17 +660,23 @@ function parseRefs(deco: string, remotes: string[]) {
   return out
 }
 
-function Badge(c: Any, key: string, r: { tone: string; text: string }) {
+const hexA = (hex: string, a: number) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`
+
+// A ref badge tinted with its branch's lane colour (grey when there is no lane).
+function Badge(c: Any, key: string, r: { tone: string; text: string }, lane?: number) {
   const { Text } = c.E
-  const tag = r.tone === 'tag'
-  return <Text key={key} backgroundColor={tag ? TAG_BG : BADGE_BG} color={tag ? TAG_FG : BADGE_FG} size="footnote" weight="semibold">{` ${r.text} `}</Text>
+  if (r.tone === 'tag') return <Text key={key} backgroundColor={TAG_BG} color={TAG_FG} size="footnote" weight="semibold">{` ${r.text} `}</Text>
+  if (lane === undefined) return <Text key={key} backgroundColor={BADGE_BG} color={BADGE_FG} size="footnote" weight="semibold">{` ${r.text} `}</Text>
+  const hex = LANE_COLORS[lane % LANE_COLORS.length]!
+  const head = r.tone === 'head'
+  return <Text key={key} backgroundColor={head ? hex : hexA(hex, 0.25)} color={head ? '#1c1c1e' : hex} size="footnote" weight="semibold">{` ${r.tone === 'remote' ? '◉ ' : ''}${r.text} `}</Text>
 }
 
 const remoteNames = (snap: Any): string[] => [...new Set((snap.branches?.remote ?? []).map((b: Any) => String(b.remote ?? '')).filter(Boolean))] as string[]
 
 // One commit row: graph dot, subject with ref badges, author, SHA, date (Fork's table).
-function CommitRow(c: Any, it: Any, wide: boolean) {
-  const { Box, Text, Button } = c.E
+function CommitRow(c: Any, it: Any, wide: boolean, g: Any, gw: number) {
+  const { Box, Text, Button, Svg } = c.E
   const on = itemKey(c.ui.sel) === itemKey(it)
   const fg = on ? SEL_FG : undefined
   const dim = on ? SEL_FG : 'subtle'
@@ -587,13 +690,13 @@ function CommitRow(c: Any, it: Any, wide: boolean) {
   )
   const subject = (
     <Text wrap="truncate-end" color={fg} weight={on ? 'semibold' : 'medium'}>
-      {refs.length > 0 ? <Text>{refs.map((r, i) => <Text key={`rf${i}`}>{i > 0 ? ' ' : ''}{Badge(c, `bd${i}`, r)}</Text>)}{'  '}</Text> : null}
+      {refs.length > 0 ? <Text>{refs.map((r, i) => <Text key={`rf${i}`}>{i > 0 ? ' ' : ''}{Badge(c, `bd${i}`, r, g?.color)}</Text>)}{'  '}</Text> : null}
       {it.c.subject}
     </Text>
   )
   return (
-    <Box key={`row-${it.key}`} flexDirection="row" alignItems="center" gap={2} paddingX={1} backgroundColor={on ? SEL_BG : undefined}>
-      {cell('g', <Text color={on ? SEL_FG : YELLOW} weight="bold">{merge ? '⊕' : '●'}</Text>, { width: 3 })}
+    <Box key={`row-${it.key}`} flexDirection="row" alignItems="center" gap={2} paddingX={1} height={undefined} backgroundColor={on ? SEL_BG : undefined}>
+      {g ? <Box key={`g-${it.key}`} width={gw} height={ROW_H} flexShrink={0}><Svg source={graphSvg(g, gw, on)} alt="commit graph" width={gw} height={ROW_H} /></Box> : cell('g', <Text color={on ? SEL_FG : YELLOW} weight="bold">{merge ? '⊕' : '●'}</Text>, { width: 3 })}
       {cell('s', subject, { grow: true })}
       {wide ? cell('a', <Text wrap="truncate-end" color={fg} size="footnote">{it.c.author}</Text>, { width: 16 }) : null}
       {wide ? cell('h', <Text mono color={dim} size="footnote">{it.c.shortHash}</Text>, { width: 9 }) : null}
@@ -611,10 +714,11 @@ function ListTab(c: Any) {
   const rowsKey = `${ui.tab}:${ui.sub}`
   const cap: number = ui.rows[rowsKey] ?? 12
   const shown = list.slice(0, Math.max(cap, list.findIndex((x: Any) => itemKey(x) === itemKey(ui.sel)) + 1))
+  const graph = ui.tab === 'history' ? layoutGraph(list.map((x: Any) => x.c)) : null
   const rows: Any[] = []
   if (list.length === 0) rows.push(<Box key="empty" padding={2}><Text color="subtle">{ui.tab === 'stash' ? 'No stashes.' : 'Nothing here.'}</Text></Box>)
-  for (const it of shown) {
-    if (it.kind === 'commit') rows.push(CommitRow(c, it, c.wide))
+  for (const [i, it] of shown.entries()) {
+    if (it.kind === 'commit') rows.push(CommitRow(c, it, c.wide, graph?.rows[i], graph?.width ?? 0))
     else if (it.kind === 'stash') rows.push(Row(c, it, [<Text key="r" color="subtle" mono size="footnote">{it.s.ref}</Text>, <Text key="m" weight="medium"> {it.s.message}</Text>, <Text key="d" color="subtle" size="footnote">{`  ${it.s.date}`}</Text>]))
     else if (it.kind === 'local') rows.push(Row(c, it, [<Text key="c" color="success" weight="semibold">{it.b.current ? '✓ ' : '  '}</Text>, <Text key="n" weight={it.b.current ? 'semibold' : 'medium'}>{it.b.name}</Text>, it.b.upstream ? <Text key="u" color="subtle" size="footnote">{`  ↔ ${it.b.upstream}`}</Text> : null, <Text key="d" color="subtle" size="footnote">{`  ${it.b.date}`}</Text>]))
     else if (it.kind === 'remote') rows.push(Row(c, it, [<Text key="n" weight="medium">{it.b.name}</Text>, <Text key="d" color="subtle" size="footnote">{`  ${it.b.date}`}</Text>]))
@@ -657,6 +761,7 @@ function PatchRows(c: Any, patch: string, opts: { selectable: boolean; it?: Any;
   let oldN = 0
   let newN = 0
   let shown = 0
+  const picks = new Set<number>(c.ui.lines)
   raw.forEach((l, idx) => {
     if (l.startsWith('@@ ')) {
       const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l)
@@ -682,16 +787,18 @@ function PatchRows(c: Any, patch: string, opts: { selectable: boolean; it?: Any;
     if (!del) newN += 1
     shown += 1
     if (shown > opts.max) return
-    const picked = c.ui.lines.includes(idx)
-    const text = `${pad(o)} ${pad(n)}  ${add ? '+' : del ? '−' : ' '} ${l.slice(1)}`
-    const node = <Text mono size="footnote" color="text" backgroundColor={picked ? 'rgba(56,139,253,0.35)' : add ? ADD_BG : del ? DEL_BG : undefined} wrap="wrap">{text}</Text>
-    const gutter = (add || del) && opts.selectable
-      ? <Button key={`${opts.keyp}-pick-${idx}`} plain onPress={() => { const s = new Set<number>(c.ui.lines); if (s.has(idx)) s.delete(idx); else s.add(idx); c.ui.lines = [...s].sort((a, b) => a - b); c.redraw() }}><Text color={picked ? 'claude' : 'subtle'} mono>{picked ? '☑' : '☐'}</Text></Button>
-      : <Text mono> </Text>
+    const picked = picks.has(idx)
+    const body = l.length > 300 ? `${l.slice(1, 300)}…` : l.slice(1)
+    const text = `${pad(o)} ${pad(n)}  ${add ? '+' : del ? '−' : ' '} ${body}`
+    const node = <Text mono size="footnote" color="text" backgroundColor={picked ? 'rgba(56,139,253,0.35)' : add ? ADD_BG : del ? DEL_BG : undefined} wrap="truncate-end">{text}</Text>
+    if (!((add || del) && opts.selectable)) {
+      out.push(<Box key={`${opts.keyp}-dl-${idx}`} flexDirection="row" paddingLeft={4} overflow="hidden">{node}</Box>)
+      return
+    }
     out.push(
-      <Box key={`${opts.keyp}-dl-${idx}`} flexDirection="row" alignItems="center" gap={1}>
-        <Box width={3}>{gutter}</Box>
-        <Box flexGrow={1}>{node}</Box>
+      <Box key={`${opts.keyp}-dl-${idx}`} flexDirection="row" alignItems="center" gap={1} overflow="hidden">
+        <Box width={3} flexShrink={0}><Button key={`${opts.keyp}-pick-${idx}`} plain onPress={() => { const set = new Set<number>(c.ui.lines); if (set.has(idx)) set.delete(idx); else set.add(idx); c.ui.lines = [...set].sort((a, b) => a - b); c.redraw() }}><Text color={picked ? 'claude' : 'subtle'} mono>{picked ? '☑' : '☐'}</Text></Button></Box>
+        <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">{node}</Box>
       </Box>,
     )
   })
@@ -719,7 +826,7 @@ function DiffView(c: Any, d: Any, it: Any) {
   let adds = 0
   let dels = 0
   raw.forEach((l) => { if (l.startsWith('+') && !l.startsWith('+++')) adds += 1; else if (l.startsWith('-') && !l.startsWith('---')) dels += 1 })
-  const max = c.ui.showAll[`diff:${it.path}`] ? 100000 : 400
+  const max = c.ui.showAll[`diff:${it.path}`] ?? 150
   const toggle = it.staged && it.unstaged ? (
     <Box flexDirection="row" gap={1}>
       <Button key="v-unstaged" variant={staged ? 'secondary' : 'primary'} onPress={() => { c.ui.fileView[it.path] = 'unstaged'; c.ui.sel = { ...it, group: 'unstaged' }; loadDetail(c, true); c.redraw() }}>Unstaged</Button>
@@ -737,7 +844,7 @@ function DiffView(c: Any, d: Any, it: Any) {
       {d.binary ? <Box padding={2}><Text color="subtle">Binary file: no textual diff.</Text></Box> : d.empty ? <Box padding={2}><Text color="subtle">No changes.</Text></Box> : null}
       {!d.binary && !d.empty ? <Box flexDirection="column" borderStyle="round" borderColor="promptBorder">{PatchRows(c, patch, { selectable, it, keyp: 'd', max })}</Box> : null}
       {!d.binary && !d.empty ? <Text color="subtle" size="caption">{selectable ? 'Click changed lines to select them, or use Stage hunk.' : 'New file: stage it as a whole with its checkbox.'}</Text> : null}
-      {raw.length > max ? <Button key="diff-more" variant="secondary" onPress={() => { c.ui.showAll[`diff:${it.path}`] = true; c.redraw() }}>Show the rest of the diff</Button> : null}
+      {raw.length > max ? <Button key="diff-more" variant="secondary" onPress={() => { c.ui.showAll[`diff:${it.path}`] = max + 300; c.redraw() }}>{`Show ${Math.min(300, raw.length - max)} more lines`}</Button> : null}
       {d.truncated ? <Text color="warning" size="footnote">{`Diff cut: ${d.truncated} more characters not shown.`}</Text> : null}
       {c.ui.lines.length > 0 ? (
         <Box flexDirection="row" alignItems="center" gap={1}>
@@ -778,8 +885,15 @@ function filesOf(patch: string) {
 }
 
 function StatusBadge(c: Any, key: string, status: string) {
-  const { Text } = c.E
-  return <Text key={key} backgroundColor={BADGE_STATUS[status] ?? BADGE_STATUS.M} color="#1c1c1e" weight="bold" mono>{` ${STATUS_GLYPH[status] ?? '⋯'} `}</Text>
+  const { Box, Svg } = c.E
+  const bg = BADGE_STATUS[status] ?? BADGE_STATUS.M
+  const ink = '#1c1c1e'
+  let glyph = `<text x='8' y='11.5' text-anchor='middle' font-size='10' font-weight='700' fill='${ink}'>${status === 'R' || status === 'C' ? '→' : status === 'U' ? '!' : status}</text>`
+  if (status === 'M' || status === 'T') glyph = `<circle cx='4.5' cy='8' r='1.3' fill='${ink}'/><circle cx='8' cy='8' r='1.3' fill='${ink}'/><circle cx='11.5' cy='8' r='1.3' fill='${ink}'/>`
+  else if (status === 'A' || status === '?') glyph = `<path d='M8 4.5V11.5M4.5 8H11.5' stroke='${ink}' stroke-width='1.8' stroke-linecap='round'/>`
+  else if (status === 'D') glyph = `<path d='M4.5 8H11.5' stroke='${ink}' stroke-width='1.8' stroke-linecap='round'/>`
+  const source = `<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'><rect x='0.5' y='0.5' width='15' height='15' rx='3' fill='${bg}'/>${glyph}</svg>`
+  return <Box key={key} width={3} flexShrink={0} alignItems="center"><Svg source={source} alt={`status ${status}`} width={16} height={16} /></Box>
 }
 
 function Avatar(c: Any, name: string) {
@@ -828,7 +942,7 @@ function CommitDetail(c: Any, d: Any, it: Any) {
         {files.slice(0, 40).map((f, i) => (
           <Box key={`f-${i}`} flexDirection="column" borderStyle="round" borderColor="promptBorder">
             {FileBar(c, f.path)}
-            {PatchRows(c, f.chunk, { selectable: false, keyp: `s${i}`, max: 250 })}
+            {PatchRows(c, f.chunk, { selectable: false, keyp: `s${i}`, max: 120 })}
           </Box>
         ))}
       </Box>
@@ -1039,13 +1153,14 @@ export function GitView(E: Any, props: Any, ui: Any, act: Any) {
   const side = ui.sidebar
   const main = ui.tab === 'changes' && c.wide ? (
     <Box flexDirection="row" gap={2} alignItems="flex-start" width="100%" overflow="hidden">
-      <Box flexDirection="column" width="40%" minWidth="40%" flexGrow={0} flexShrink={0} gap={1} overflow="hidden">{ChangesList(c)}</Box>
-      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">{Detail(c)}</Box>
+      <Box flexDirection="column" width="38%" minWidth="38%" flexGrow={0} flexShrink={0} gap={1} overflow="hidden">{ChangesList(c)}</Box>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} gap={2} overflow="hidden">{Detail(c)}{CommitBox(c)}</Box>
     </Box>
   ) : (
     <Box flexDirection="column" gap={2} width="100%" overflow="hidden">
       {ui.tab === 'changes' ? ChangesList(c) : ListTab(c)}
       <Box flexDirection="column" backgroundColor={SURFACE} padding={1} overflow="hidden">{Detail(c)}</Box>
+      {ui.tab === 'changes' ? CommitBox(c) : null}
     </Box>
   )
   return (

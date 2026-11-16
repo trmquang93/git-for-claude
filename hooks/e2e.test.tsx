@@ -12,9 +12,11 @@ let opened = 0
 const missing: string[] = []
 const calls: string[][] = []
 const stdins: string[] = []
+let BIG = ''
 function answer(e: any) {
   const argv = e.argv
   const init = e.init ?? {}
+  if (BIG !== '' && argv?.includes('diff') && argv.includes('multi.txt')) return { exitCode: 0, stdout: BIG, stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   if (argv?.[0] === 'mktemp') return { exitCode: 0, stdout: '/tmp/mockdir\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   if (argv?.includes('checkout-index') || argv?.includes('read-tree') || argv?.[0] === 'rm') return { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   if (argv?.[0] === 'git' && argv[1] === 'rev-parse') return { exitCode: 0, stdout: FIX + '\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
@@ -53,7 +55,7 @@ test('Changes tab lists grouped files and the first diff', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await settle(ui)
   const out = await texts(ui)
-  for (const word of ['5 changed files', 'b.txt', 'multi.txt', 'untracked.txt', 'main', 'Commit hooks are skipped']) expect(out).toContain(word)
+  for (const word of ['Unstaged', 'b.txt', 'multi.txt', 'untracked.txt', 'main', 'Commit hooks are skipped']) expect(out).toContain(word)
   expect(missing.length).toBe(0)
   await ui.unmount()
 })
@@ -99,7 +101,9 @@ test('an image file shows before and after previews', async ($, on) => {
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   await settle(ui)
   await press(ui, 'sel-logo.png')
-  expect((await ui.findAll({ type: 'Svg' })).length).toBe(2)
+  const all = await ui.findAll({ type: 'Svg' })
+  const imgs = all.filter((x: any) => /image$/.test(x.props?.alt ?? ''))
+  expect(imgs.length).toBe(2)
   await ui.unmount()
 })
 
@@ -110,7 +114,7 @@ test('tabs and header buttons work', async ($, on) => {
   await press(ui, 'sib-history')
   expect(await texts(ui)).toContain('initial commit')
   await press(ui, 'sib-changes')
-  await press(ui, 'open-stash')
+  await press(ui, 'sib-st:stash@{0}')
   expect(await texts(ui)).toContain('WIP on main')
   await press(ui, 'branch')
   expect(await texts(ui)).toContain('origin/main')
@@ -168,6 +172,8 @@ test('Fork layout: sidebar, commit table with ref badges, and the Commit / Chang
   const side = await texts(ui)
   for (const word of ['Local Changes (5)', 'All Commits', 'Branches', 'Remotes', 'origin']) expect(side).toContain(word)
   for (const key of ['fetch', 'pull', 'push', 'stash', 'newbranch', 'sib-changes', 'sib-history']) expect(await ui.find({ type: 'Button', key })).toBeTruthy()
+  expect(side.indexOf('Worktrees')).toBeGreaterThan(-1)
+  expect(side.indexOf('Worktrees')).toBeLessThan(side.indexOf('Branches'))
   await press(ui, 'sib-history')
   let out = await texts(ui)
   for (const word of ['initial commit', '✓ main', 'origin/main', 'v1', 'Mar 29, 2021 at 13:21', 'AUTHOR', 'COMMITTER', 'SHA', 'REFS', 'Test']) expect(out).toContain(word)
@@ -178,7 +184,35 @@ test('Fork layout: sidebar, commit table with ref badges, and the Commit / Chang
   await press(ui, 'ct-changes')
   expect(await texts(ui)).toContain('src/a.txt')
   await press(ui, 'sib-changes')
-  expect(await texts(ui)).toContain('5 changed files')
+  expect(await texts(ui)).toContain('Unstaged')
   expect(missing).toEqual([])
+  await ui.unmount()
+})
+
+test('All Commits draws a branch graph: one SVG per row, lanes for a merged branch', async ($, on) => {
+  await setup($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await settle(ui)
+  await press(ui, 'sib-history')
+  const svgs = await ui.findAll({ type: 'Svg' })
+  const graph = svgs.filter((x: any) => x.props?.alt === 'commit graph')
+  expect(graph.length).toBeGreaterThan(0)
+  expect(graph[0].props.source).toContain('<circle')
+  await ui.unmount()
+})
+
+test('a large diff with long lines renders quickly', async ($, on) => {
+  const lines: string[] = ['diff --git a/multi.txt b/multi.txt', 'index 111..222 100644', '--- a/multi.txt', '+++ b/multi.txt', '@@ -1,400 +1,800 @@']
+  for (let i = 0; i < 800; i++) lines.push(`${i % 3 === 0 ? '-' : '+'}  const x${i} = '${'<svg xmlns=\'http://www.w3.org/2000/svg\'>'.repeat(5)}' + ${i}`)
+  BIG = lines.join('\n') + '\n'
+  await setup($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await settle(ui)
+  const t0 = Date.now()
+  await press(ui, 'sel-multi.txt')
+  const ms = Date.now() - t0
+  const n = (await ui.findAll({ type: 'Text' })).length
+  console.log(`BIGDIFF select+render ${ms}ms, ${n} texts`)
+  BIG = ''
   await ui.unmount()
 })

@@ -8,12 +8,12 @@ Stash, New Branch, Undo), and a sidebar with Local Changes, All Commits, Branche
 (nested by `/`), Remotes, Tags, Stashes, Worktrees and Reflog. All Commits is a table
 (graph dot, subject with branch, remote and tag badges, author, SHA, date). The detail
 under it has Commit (author, committer, refs, SHA, parent links, message, files),
-Changes (per-file diffs) and File Tree tabs. Local Changes groups files with a checkbox
-each, a diff beside them and a commit box under the list. You can stage whole files,
+Changes (per-file diffs) and File Tree tabs. Local Changes has an Unstaged and a Staged list (folder trees with status badges, a Stage /
+Unstage button each), the diff beside them and the commit box under the diff. You can stage whole files,
 hunks or single lines, commit and amend, switch and create branches, merge, rebase,
 cherry-pick, revert, reset, stash, tag, fetch, pull, push, manage linked worktrees,
 preview changed images before and after, and undo the last action. Everything is
-clickable; hotkeys: `1` Local Changes, `2` All Commits, `3` branches, `4` stashes,
+clickable; hotkeys: `1` Local Changes, `2` All Commits, `3` branches,
 `c` commit, `f` fetch, `l` pull, `p` push, `u` undo, `r` refresh.
 
 Claude extras: the pane refreshes after Claude edits files, the status line shows the

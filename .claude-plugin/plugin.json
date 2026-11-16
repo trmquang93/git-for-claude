@@ -1,6 +1,6 @@
 {
   "name": "git-for-claude",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lazygit-style Git pane for Claude Desktop: files, hunk and line staging, commit, branches, history, stash, worktrees, remotes, undo.",
   "types": "./types/index.d.ts"
 }

@@ -100,7 +100,10 @@ async function refresh($: any, dir?: string) {
     error = String(e)
   }
   const before = await read($, view)
-  const same = before.dir === d && before.error === error && JSON.stringify(before.snap) === JSON.stringify(snap)
+  // Relative dates ("3 seconds ago") change on every poll: leave them out, or the pane
+  // would redraw and reload the open diff every few seconds.
+  const stable = (x: unknown) => JSON.stringify(x, (k, v) => (k === 'date' ? undefined : v))
+  const same = before.dir === d && before.error === error && stable(before.snap) === stable(snap)
   if (!same) await update($, view, (cur: View) => ({ ...cur, dir: d, snap, rev: cur.rev + 1, error }))
   const b = snap.status?.branch
   if (snap.status?.isRepo === false || b === undefined) $.ui.status(undefined)
