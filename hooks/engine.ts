@@ -907,10 +907,10 @@ export function createApi(io) {
     const ref = typeof request?.ref === "string" && request.ref.trim() !== "" ? request.ref.trim() : "HEAD";
     const limit = positiveInt(request?.limit, 50, 500);
     const skip = positiveInt(request?.skip, 0, 100_000);
-    const format = ["%h", "%H", "%an", "%ar", "%s", "%D"].join("%x01");
+    const format = ["%h", "%H", "%an", "%ar", "%s", "%D", "%P", "%ad", "%ae"].join("%x01");
     // One extra row tells the pager whether more history exists without
     // reporting the final page as "full".
-    const argv = ["log", `--max-count=${String(limit + 1)}`, `--skip=${String(skip)}`, "--date=relative", `--pretty=format:${format}`, ref];
+    const argv = ["log", `--max-count=${String(limit + 1)}`, `--skip=${String(skip)}`, "--date=format:%b %d, %Y at %H:%M", `--pretty=format:${format}`, ref];
     const result = await execGit(root, argv, { allowCodes: [0, 128] });
     if (result.code !== 0) {
       if (/does not have any commits yet|unknown revision/u.test(result.stderr)) {
@@ -921,7 +921,7 @@ export function createApi(io) {
     const rows = [];
     for (const line of result.stdout.split("\n")) {
       if (line.trim() === "") continue;
-      const [shortHash, hash, author, date, subject, decorations] = splitFields(line, "\u0001");
+      const [shortHash, hash, author, date, subject, decorations, parents, fullDate, email] = splitFields(line, "\u0001");
       rows.push({
         shortHash,
         hash,
@@ -929,6 +929,9 @@ export function createApi(io) {
         date,
         subject,
         decorations: decorations ?? "",
+        parents: (parents ?? "").split(" ").filter((x) => x !== ""),
+        fullDate: fullDate ?? "",
+        email: email ?? "",
       });
     }
     return { commits: rows.slice(0, limit), hasMore: rows.length > limit };
@@ -939,9 +942,9 @@ export function createApi(io) {
     const root = await repoRoot(request?.dir);
     const hash = typeof request?.hash === "string" ? request.hash.trim() : "";
     if (hash === "") throw new Error("git/show: a commit is required");
-    const metaFormat = ["%H", "%an", "%ae", "%ar", "%s", "%D", "%B"].join("%x01");
+    const metaFormat = ["%H", "%an", "%ae", "%ar", "%s", "%D", "%B", "%cn", "%ce", "%ad", "%cd", "%P"].join("%x01");
     const [meta, patch] = await Promise.all([
-      execGit(root, ["show", "--no-patch", "--date=relative", `--format=${metaFormat}`, hash], { allowCodes: [0, 128] }),
+      execGit(root, ["show", "--no-patch", "--date=format:%B %d, %Y at %H:%M:%S GMT%z", `--format=${metaFormat}`, hash], { allowCodes: [0, 128] }),
       execGit(root, ["--no-pager", "show", "--no-color", "--format=", "--stat", "--patch", hash], {
         allowCodes: [0, 128],
         maxBytes: 4 * 1024 * 1024,
@@ -957,6 +960,11 @@ export function createApi(io) {
       subject: fields[4] ?? "",
       decorations: fields[5] ?? "",
       body: (fields[6] ?? "").replace(/\n+$/u, ""),
+      committer: fields[7] ?? "",
+      committerEmail: fields[8] ?? "",
+      authorDate: fields[9] ?? "",
+      committerDate: (fields[10] ?? "").replace(/\n+$/u, ""),
+      parents: (fields[11] ?? "").trim().split(" ").filter((x) => x !== ""),
       patch: patch.stdout,
     };
   }

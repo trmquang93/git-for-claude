@@ -8,15 +8,24 @@ const SURFACE = 'rgba(127,127,127,0.09)'
 const HUNK_BG = 'rgba(56,139,253,0.14)'
 const ADD_BG = 'rgba(46,160,67,0.28)'
 const DEL_BG = 'rgba(248,81,73,0.28)'
-const SUBS = ['Local', 'Remotes', 'Tags', 'Worktrees', 'Reflog']
 const STATUS_WORD: Any = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'New', T: 'Type' }
 const STATUS_COLOR: Any = { M: 'warning', A: 'success', D: 'error', R: 'suggestion', C: 'suggestion', U: 'error', '?': 'success', T: 'warning' }
 const STATUS_ICON: Any = { M: '◼', A: '✚', D: '━', R: '➜', C: '➜', U: '!', '?': '✚', T: '◼' }
 const LIMIT = 14
+const SEL_BG = '#0a64d8'
+const SEL_FG = '#ffffff'
+const YELLOW = '#e5b80b'
+const BADGE_BG = '#ececf0'
+const BADGE_FG = '#1c1c1e'
+const TAG_BG = '#ffe28a'
+const TAG_FG = '#5c4300'
+const BADGE_STATUS: Any = { M: '#f5c542', A: '#3fb950', D: '#f85149', R: '#58a6ff', C: '#58a6ff', T: '#f5c542', U: '#f85149' }
+const STATUS_GLYPH: Any = { M: '⋯', A: '+', D: '−', R: '➜', C: '➜', T: '⋯', U: '!' }
+const AVATAR = ['#5e5ce6', '#bf5af2', '#c77700', '#1f8a9e', '#d6285a', '#2478b8', '#1f9d46']
 
 export function initUi(): Any {
   return {
-    tab: 'changes', sub: 0, sel: null, detail: null, detailKey: '', lines: [], sum: '', desc: '', commitN: 0, amend: false, fileView: {}, fetchedAt: 0, filter: '',
+    tab: 'changes', sub: 0, sel: null, detail: null, detailKey: '', lines: [], ctab: 'commit', sidebar: true, open: {}, rows: {}, sum: '', desc: '', commitN: 0, amend: false, fileView: {}, fetchedAt: 0, filter: '',
     dialog: null, log: [], notice: '', showAll: {}, collapsed: {}, more: null, hasMore: false, rev: -1, logOpen: false,
   }
 }
@@ -266,43 +275,55 @@ const A: Any = {
 
 // ---------------------------------------------------------------- pieces
 
-function Chip(c: Any, text: string, color: string) {
-  const { Text } = c.E
-  return <Text color={color} size="footnote" weight="semibold" mono>{text}</Text>
-}
 
-function Cell(c: Any, label: string, body: Any, grow = false) {
-  const { Box, Text } = c.E
+
+function RepoTabs(c: Any) {
+  const { Box, Text, Button } = c.E
+  const { props, snap } = c
+  const cur = String(props.dir ?? '')
+  const dirs: string[] = [cur, ...(props.recents ?? []).filter((r: string) => r !== cur)].filter(Boolean).slice(0, 6)
+  const dirty = (snap.status?.files?.length ?? 0) > 0
   return (
-    <Box flexDirection="column" paddingX={2} paddingY={1} borderStyle="round" borderColor="promptBorder" backgroundColor={SURFACE} flexGrow={grow ? 1 : undefined}>
-      <Text color="subtle" size="caption">{label}</Text>
-      {body}
+    <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
+      {dirs.map((d: string, i: number) => {
+        const on = d === cur
+        const name = d.split('/').filter(Boolean).at(-1) ?? d
+        return (
+          <Box key={`rt-${i}`} flexDirection="row" alignItems="center" gap={1} paddingX={2} backgroundColor={on ? SURFACE : undefined} borderStyle={on ? 'round' : undefined} borderColor="promptBorder">
+            <Button key={`rtb-${i}`} plain dimColor={!on} onPress={() => { if (!on) c.req('setDir', { dir: d }, 'quiet') }}><Text weight={on ? 'semibold' : 'regular'}>{`${name}${on && dirty ? '*' : ''}`}</Text></Button>
+            {on && dirty ? <Text color="error" size="footnote">●</Text> : null}
+          </Box>
+        )
+      })}
+      <Button key="rt-add" plain dimColor onPress={() => { A.repo(c); c.redraw() }}>+</Button>
     </Box>
   )
 }
 
-function Header(c: Any) {
+function Toolbar(c: Any) {
   const { Box, Text, Button } = c.E
   const { ui, props, snap } = c
   const b = snap.status?.branch ?? {}
-  const repoName = String(props.dir ?? '').split('/').filter(Boolean).at(-1) ?? 'Git'
   const prog = Object.entries(snap.status?.inProgress ?? {}).filter(([, v]) => v === true).map(([k]) => k)
   const behind = b.behind ?? 0
   const ahead = b.ahead ?? 0
-  const sync = behind > 0 ? { label: `Pull origin  ↓${behind}`, hint: `Last fetched ${ago(ui.fetchedAt)}`, run: () => c.m('pull', {}, 'git pull'), main: false }
-    : ahead > 0 || !b.upstream ? { label: b.upstream ? `Push origin  ↑${ahead}` : 'Publish branch', hint: `Last fetched ${ago(ui.fetchedAt)}`, run: () => A.push(c), main: true }
-    : { label: 'Fetch origin', hint: `Last fetched ${ago(ui.fetchedAt)}`, run: () => c.m('fetch', {}, 'git fetch --all --prune'), main: false }
+  const repoName = String(props.dir ?? '').split('/').filter(Boolean).at(-1) ?? 'Git'
   return (
     <Box flexDirection="column" gap={1}>
-      <Box flexDirection="row" alignItems="stretch" gap={1} flexWrap="wrap">
-        {Cell(c, 'Current repository', <Button key="repo" plain onPress={() => { A.repo(c); c.redraw() }}><Text weight="semibold">{`${repoName}  ▾`}</Text></Button>, true)}
-        {Cell(c, 'Current branch', <Button key="branch" plain hotkey="3" onPress={() => { ui.tab = 'branches'; ui.sel = null; ui.detail = null; ui.detailKey = ''; initSelection(c); c.redraw() }}><Text weight="semibold" color="claude">{`⎇ ${b.name ?? `(${b.shortOid ?? 'no branch'})`}  ▾`}</Text></Button>, true)}
-        {Cell(c, sync.hint, <Button key="sync" variant={sync.main ? 'primary' : 'secondary'} hotkey="p" onPress={sync.run}>{sync.label}</Button>, true)}
-      </Box>
-      <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
-        <Button key="fetch" plain dimColor hotkey="f" onPress={() => c.m('fetch', {}, 'git fetch --all --prune')}>Fetch</Button>
-        <Button key="pull" plain dimColor hotkey="l" onPress={() => c.m('pull', {}, 'git pull')}>Pull</Button>
-        <Button key="undo" plain dimColor hotkey="u" onPress={() => { A.undo(c); c.redraw() }}>Undo</Button>
+      <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap" paddingX={1}>
+        <Button key="side" plain dimColor onPress={() => { ui.sidebar = !ui.sidebar; c.redraw() }}>☰</Button>
+        <Button key="fetch" plain hotkey="f" onPress={() => c.m('fetch', {}, 'git fetch --all --prune')}>⟳ Fetch</Button>
+        <Button key="pull" plain hotkey="l" onPress={() => c.m('pull', {}, 'git pull')}>{behind > 0 ? `↓ Pull  ${behind}` : '↓ Pull'}</Button>
+        <Button key="push" plain hotkey="p" onPress={() => A.push(c)}>{b.upstream ? (ahead > 0 ? `↑ Push  ${ahead}` : '↑ Push') : '↑ Publish'}</Button>
+        <Button key="stash" plain onPress={() => { A.stashNew(c); c.redraw() }}>⧉ Stash</Button>
+        <Box flexGrow={1} />
+        <Box flexDirection="column" alignItems="center" paddingX={2} backgroundColor={SURFACE}>
+          <Text weight="semibold">{`${repoName}${(snap.status?.files?.length ?? 0) > 0 ? '*' : ''}`}</Text>
+          <Button key="branch" plain hotkey="3" onPress={() => nav(c, 'branches', 0, b.name ?? undefined)}><Text size="footnote" color="claude">{`⎇ ${b.name ?? `(${b.shortOid ?? 'no branch'})`}  ▾`}</Text></Button>
+        </Box>
+        <Box flexGrow={1} />
+        <Button key="newbranch" plain dimColor onPress={() => { A.branchNew(c); c.redraw() }}>⑂ New Branch</Button>
+        <Button key="undo" plain dimColor hotkey="u" onPress={() => { A.undo(c); c.redraw() }}>↶ Undo</Button>
         <Button key="refresh" plain dimColor hotkey="r" onPress={() => c.req('refresh', {}, 'quiet')}>Refresh</Button>
         {props.busy ? <Text color="warning" size="footnote">working…</Text> : null}
       </Box>
@@ -316,26 +337,145 @@ function Header(c: Any) {
   )
 }
 
-function Tabs(c: Any) {
-  const { Box, Button } = c.E
-  const { ui, snap } = c
-  const go = (id: string) => { ui.tab = id; ui.sel = null; ui.detail = null; ui.detailKey = ''; ui.lines = []; initSelection(c); c.redraw() }
-  const nFiles = snap.status?.files?.length ?? 0
+// ---- sidebar
+
+const isOpen = (ui: Any, id: string, def: boolean) => (ui.open[id] === undefined ? def : ui.open[id] === true)
+
+function SideItem(c: Any, o: { id: string; label: string; active?: boolean; indent?: number; glyph?: string; right?: string; weight?: string; hotkey?: string; onPress: () => void }) {
+  const { Box, Text, Button } = c.E
   return (
-    <Box flexDirection="row" gap={1}>
-      <Button key="tab-changes" variant={ui.tab === 'changes' ? 'primary' : 'secondary'} hotkey="1" onPress={() => go('changes')}>{nFiles > 0 ? `Changes  ${nFiles}` : 'Changes'}</Button>
-      <Button key="tab-history" variant={ui.tab === 'history' ? 'primary' : 'secondary'} hotkey="2" onPress={() => go('history')}>History</Button>
-      {ui.tab === 'branches' ? <Button key="tab-branches" variant="primary" onPress={() => go('branches')}>Branches</Button> : null}
-      {ui.tab === 'stash' ? <Button key="tab-stash" variant="primary" onPress={() => go('stash')}>Stashed changes</Button> : null}
+    <Box key={`si-${o.id}`} flexDirection="row" alignItems="center" gap={1} paddingLeft={1 + (o.indent ?? 0) * 2} paddingRight={1} backgroundColor={o.active ? SEL_BG : undefined}>
+      <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+        <Button key={`sib-${o.id}`} plain hotkey={o.hotkey} onPress={o.onPress}><Text wrap="truncate-end" color={o.active ? SEL_FG : undefined} weight={o.weight ?? 'medium'}>{`${o.glyph ? o.glyph + ' ' : ''}${o.label}`}</Text></Button>
+      </Box>
+      {o.right ? <Text size="footnote" color={o.active ? SEL_FG : 'subtle'}>{o.right}</Text> : null}
     </Box>
   )
 }
 
-function initSelection(c: Any) {
+function SideSection(c: Any, id: string, title: string, count: number | null, def: boolean, body: () => Any[]) {
+  const { Box, Text, Button } = c.E
+  const open = isOpen(c.ui, id, def)
+  return (
+    <Box key={`ss-${id}`} flexDirection="column">
+      <Box flexDirection="row" alignItems="center" gap={1} paddingX={1} paddingY={1}>
+        <Button key={`ssb-${id}`} plain onPress={() => { c.ui.open[id] = !open; c.redraw() }}><Text weight="semibold">{`${open ? '▾' : '▸'} ${title}`}</Text></Button>
+        {count !== null ? <Text size="footnote" color="subtle">{String(count)}</Text> : null}
+      </Box>
+      {open ? <Box flexDirection="column">{body()}</Box> : null}
+    </Box>
+  )
+}
+
+// Names with `/` nest into folders, like Fork.
+function nameTree(items: { name: string; data: Any }[]) {
+  const root: Any = { dirs: new Map(), leaves: [] }
+  for (const it of items) {
+    const parts = it.name.split('/')
+    let node = root
+    for (const seg of parts.slice(0, -1)) {
+      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), leaves: [] })
+      node = node.dirs.get(seg)
+    }
+    node.leaves.push({ label: parts[parts.length - 1], data: it.data, name: it.name })
+  }
+  return root
+}
+
+function renderTree(c: Any, node: Any, depth: number, path: string, leaf: (l: Any, depth: number) => Any, hasActive: (name: string) => boolean): Any[] {
+  const out: Any[] = []
+  for (const [seg, child] of [...node.dirs.entries()].sort((a: Any, b: Any) => a[0].localeCompare(b[0]))) {
+    const id = `fd:${path}${seg}`
+    const names: string[] = []
+    const collect = (n: Any) => { n.leaves.forEach((l: Any) => names.push(l.name)); n.dirs.forEach((d: Any) => collect(d)) }
+    collect(child)
+    const open = isOpen(c.ui, id, names.some(hasActive))
+    out.push(SideItem(c, { id, label: seg, glyph: open ? '▾ ▭' : '▸ ▭', indent: depth, onPress: () => { c.ui.open[id] = !open; c.redraw() } }))
+    if (open) out.push(...renderTree(c, child, depth + 1, `${path}${seg}/`, leaf, hasActive))
+  }
+  for (const l of node.leaves) out.push(leaf(l, depth))
+  return out
+}
+
+function Sidebar(c: Any) {
+  const { Box, Text } = c.E
+  const { ui, snap, props } = c
+  const nFiles = snap.status?.files?.length ?? 0
+  const repoName = String(props.dir ?? '').split('/').filter(Boolean).at(-1) ?? 'Git'
+  const sel = ui.sel
+  const activeKey = (tab: string, sub: number) => (ui.tab === tab && ui.sub === sub && sel ? sel.key : '')
+  const local: Any[] = snap.branches?.local ?? []
+  const remote: Any[] = snap.branches?.remote ?? []
+  const remotes: string[] = [...new Set(remote.map((b: Any) => String(b.remote ?? '')).filter(Boolean))]
+  const branchLeaf = (kind: number) => (l: Any, depth: number) => {
+    const b = l.data
+    return SideItem(c, {
+      id: `${kind}:${l.name}`, label: l.label, indent: depth + 1, active: activeKey('branches', kind) === l.name,
+      glyph: kind === 0 ? (b.current ? '✓' : '⑂') : '⑂', weight: kind === 0 && b.current ? 'bold' : 'medium',
+      right: kind === 0 && b.current ? `${snap.status?.branch?.behind ? '↓' + snap.status.branch.behind : ''}${snap.status?.branch?.ahead ? ' ↑' + snap.status.branch.ahead : ''}`.trim() : '',
+      onPress: () => nav(c, 'branches', kind, l.name),
+    })
+  }
+  const sorted = [...local].sort((a: Any, b: Any) => (a.current === b.current ? a.name.localeCompare(b.name) : a.current ? -1 : 1))
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box paddingX={1}><Text weight="semibold" size="heading" wrap="truncate-end">{repoName}</Text></Box>
+      <Box flexDirection="column">
+        {SideItem(c, { id: 'changes', label: nFiles > 0 ? `Local Changes (${nFiles})` : 'Local Changes', glyph: '▤', active: ui.tab === 'changes', hotkey: '1', onPress: () => nav(c, 'changes') })}
+        {SideItem(c, { id: 'history', label: 'All Commits', glyph: '☰', active: ui.tab === 'history', hotkey: '2', onPress: () => nav(c, 'history') })}
+      </Box>
+      <Box flexDirection="column" borderStyle="round" borderColor="promptBorder" />
+      {SideSection(c, 'sec-branches', 'Branches', local.length, true, () => renderTree(c, nameTree(sorted.map((b: Any) => ({ name: b.name, data: b }))), 0, 'b/', branchLeaf(0), (n) => activeKey('branches', 0) === n))}
+      {SideSection(c, 'sec-remotes', 'Remotes', remotes.length, true, () => remotes.flatMap((r: string) => {
+        const id = `rm:${r}`
+        const open = isOpen(ui, id, true)
+        const items = remote.filter((b: Any) => b.remote === r).map((b: Any) => ({ name: b.branch, data: { ...b, name: b.name } }))
+        const leaf = (l: Any, depth: number) => SideItem(c, { id: `1:${r}/${l.name}`, label: l.label, indent: depth + 1, glyph: '⑂', active: activeKey('branches', 1) === `${r}/${l.name}`, onPress: () => nav(c, 'branches', 1, `${r}/${l.name}`) })
+        return [
+          SideItem(c, { id, label: r, glyph: open ? '▾ ◉' : '▸ ◉', indent: 0, weight: 'semibold', onPress: () => { ui.open[id] = !open; c.redraw() } }),
+          ...(open ? renderTree(c, nameTree(items), 1, `${r}/`, leaf, (n) => activeKey('branches', 1) === `${r}/${n}`) : []),
+        ]
+      }))}
+      {SideSection(c, 'sec-tags', 'Tags', (snap.tags ?? []).length, false, () => (snap.tags ?? []).map((t: Any) => SideItem(c, { id: `2:${t.name}`, label: t.name, glyph: '⌂', indent: 1, active: activeKey('branches', 2) === t.name, onPress: () => nav(c, 'branches', 2, t.name) })))}
+      {SideSection(c, 'sec-stashes', 'Stashes', (snap.stashes ?? []).length, false, () => (snap.stashes ?? []).map((st: Any) => SideItem(c, { id: `st:${st.ref}`, label: st.message || st.ref, glyph: '⧉', indent: 1, active: ui.tab === 'stash' && sel?.key === st.ref, hotkey: undefined, onPress: () => nav(c, 'stash', 0, st.ref) })))}
+      {SideSection(c, 'sec-worktrees', 'Worktrees', (snap.worktrees ?? []).length, false, () => (snap.worktrees ?? []).map((w: Any) => SideItem(c, { id: `3:${w.path}`, label: w.branch ?? '(detached)', glyph: '▭', indent: 1, active: activeKey('branches', 3) === w.path, onPress: () => nav(c, 'branches', 3, w.path) })))}
+      {SideSection(c, 'sec-reflog', 'Reflog', (snap.reflog ?? []).length, false, () => (snap.reflog ?? []).slice(0, 12).map((r: Any) => SideItem(c, { id: `4:${r.selector}`, label: `${r.selector} ${r.subject}`, glyph: '↺', indent: 1, active: activeKey('branches', 4) === r.selector, onPress: () => nav(c, 'branches', 4, r.selector) })))}
+    </Box>
+  )
+}
+
+
+
+function initSelection(c: Any, pick?: string) {
   const { ui, snap } = c
-  if (ui.tab === 'changes') ui.sel = flatFiles(snap, ui)[0] ?? null
-  else ui.sel = listFor(ui, snap)[0] ?? null
+  const list = ui.tab === 'changes' ? flatFiles(snap, ui) : listFor(ui, snap)
+  ui.sel = (pick !== undefined ? list.find((x: Any) => x.key === pick) : undefined) ?? list[0] ?? null
   loadDetail(c, true)
+}
+
+// Sidebar navigation: pick a view (and optionally one item in it).
+function nav(c: Any, tab: string, sub = 0, pick?: string) {
+  const { ui } = c
+  ui.tab = tab
+  ui.sub = sub
+  ui.sel = null
+  ui.detail = null
+  ui.detailKey = ''
+  ui.lines = []
+  initSelection(c, pick)
+  c.redraw()
+}
+
+function goCommit(c: Any, hash: string) {
+  const { ui, snap } = c
+  const found = [...(snap.commits ?? []), ...(ui.more ?? [])].find((x: Any) => x.hash === hash)
+  ui.tab = 'history'
+  ui.sub = 0
+  ui.sel = found ? { kind: 'commit', key: found.hash, c: found } : { kind: 'commit', key: hash, c: { shortHash: hash.slice(0, 7), hash, subject: hash.slice(0, 10), author: '', date: '', fullDate: '', decorations: '', parents: [] } }
+  ui.detail = null
+  ui.detailKey = ''
+  loadDetail(c, true)
+  c.redraw()
 }
 
 function Row(c: Any, item: Any, left: Any[], right: Any = null) {
@@ -393,7 +533,7 @@ function ChangesList(c: Any) {
         {n === 0 ? <Box padding={2}><Text color="subtle">Working tree clean. Nothing to commit.</Text></Box> : <Box flexDirection="column">{rows}</Box>}
         {!all && files.length > 40 ? <Box paddingX={2} paddingY={1}><Button key="showall" plain dimColor onPress={() => { ui.showAll.files = true; c.redraw() }}>{`Show all ${files.length}`}</Button></Box> : null}
         <Box paddingX={1} paddingY={1}>
-          <Button key="open-stash" plain dimColor hotkey="4" onPress={() => { ui.tab = 'stash'; ui.sel = null; ui.detailKey = ''; initSelection(c); c.redraw() }}>{`⧉ Stashed changes${(snap.stashes?.length ?? 0) > 0 ? `  ${snap.stashes.length}` : ''}  ›`}</Button>
+          <Button key="open-stash" plain dimColor hotkey="4" onPress={() => { nav(c, 'stash') }}>{`⧉ Stashed changes${(snap.stashes?.length ?? 0) > 0 ? `  ${snap.stashes.length}` : ''}  ›`}</Button>
         </Box>
       </Box>
       <Box flexDirection="column" gap={1} borderStyle="round" borderColor="promptBorder" backgroundColor={SURFACE} padding={1}>
@@ -411,23 +551,72 @@ function ChangesList(c: Any) {
   )
 }
 
+// Ref badges like Fork: `HEAD -> main` is the checked-out branch, `origin/x` a remote, `tag: v1` a tag.
+function parseRefs(deco: string, remotes: string[]) {
+  const out: { tone: string; text: string }[] = []
+  for (const raw of String(deco ?? '').replace(/^\s*\(|\)\s*$/g, '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    if (raw.startsWith('HEAD -> ')) out.push({ tone: 'head', text: `✓ ${raw.slice(8)}` })
+    else if (raw === 'HEAD') out.push({ tone: 'head', text: 'HEAD' })
+    else if (raw.startsWith('tag: ')) out.push({ tone: 'tag', text: raw.slice(5) })
+    else out.push({ tone: remotes.some((r) => raw.startsWith(`${r}/`)) ? 'remote' : 'local', text: raw })
+  }
+  return out
+}
+
+function Badge(c: Any, key: string, r: { tone: string; text: string }) {
+  const { Text } = c.E
+  const tag = r.tone === 'tag'
+  return <Text key={key} backgroundColor={tag ? TAG_BG : BADGE_BG} color={tag ? TAG_FG : BADGE_FG} size="footnote" weight="semibold">{` ${r.text} `}</Text>
+}
+
+const remoteNames = (snap: Any): string[] => [...new Set((snap.branches?.remote ?? []).map((b: Any) => String(b.remote ?? '')).filter(Boolean))] as string[]
+
+// One commit row: graph dot, subject with ref badges, author, SHA, date (Fork's table).
+function CommitRow(c: Any, it: Any, wide: boolean) {
+  const { Box, Text, Button } = c.E
+  const on = itemKey(c.ui.sel) === itemKey(it)
+  const fg = on ? SEL_FG : undefined
+  const dim = on ? SEL_FG : 'subtle'
+  const merge = (it.c.parents?.length ?? 0) > 1
+  const refs = parseRefs(it.c.decorations, remoteNames(c.snap))
+  const pick = () => selectItem(c, it)
+  const cell = (k: string, node: Any, o: Any = {}) => (
+    <Box key={`${k}-${it.key}`} width={o.width} flexGrow={o.grow ? 1 : 0} flexShrink={o.grow ? 1 : 0} minWidth={0} overflow="hidden">
+      <Button key={`${k}b-${it.key}`} plain onPress={pick}>{node}</Button>
+    </Box>
+  )
+  const subject = (
+    <Text wrap="truncate-end" color={fg} weight={on ? 'semibold' : 'medium'}>
+      {refs.length > 0 ? <Text>{refs.map((r, i) => <Text key={`rf${i}`}>{i > 0 ? ' ' : ''}{Badge(c, `bd${i}`, r)}</Text>)}{'  '}</Text> : null}
+      {it.c.subject}
+    </Text>
+  )
+  return (
+    <Box key={`row-${it.key}`} flexDirection="row" alignItems="center" gap={2} paddingX={1} backgroundColor={on ? SEL_BG : undefined}>
+      {cell('g', <Text color={on ? SEL_FG : YELLOW} weight="bold">{merge ? '⊕' : '●'}</Text>, { width: 3 })}
+      {cell('s', subject, { grow: true })}
+      {wide ? cell('a', <Text wrap="truncate-end" color={fg} size="footnote">{it.c.author}</Text>, { width: 16 }) : null}
+      {wide ? cell('h', <Text mono color={dim} size="footnote">{it.c.shortHash}</Text>, { width: 9 }) : null}
+      {cell('d', <Text wrap="truncate-end" color={dim} size="footnote">{wide ? (it.c.fullDate || it.c.date) : it.c.date}</Text>, { width: wide ? 23 : 15 })}
+    </Box>
+  )
+}
+
+const TITLES = ['Local branches', 'Remote branches', 'Tags', 'Worktrees', 'Reflog']
+
 function ListTab(c: Any) {
   const { Box, Text, Button } = c.E
   const { ui, snap } = c
   const list = listFor(ui, snap)
+  const rowsKey = `${ui.tab}:${ui.sub}`
+  const cap: number = ui.rows[rowsKey] ?? 12
+  const shown = list.slice(0, Math.max(cap, list.findIndex((x: Any) => itemKey(x) === itemKey(ui.sel)) + 1))
   const rows: Any[] = []
   if (list.length === 0) rows.push(<Box key="empty" padding={2}><Text color="subtle">{ui.tab === 'stash' ? 'No stashes.' : 'Nothing here.'}</Text></Box>)
-  for (const it of list) {
-    if (it.kind === 'commit') {
-      const deco = String(it.c.decorations ?? '').replace(/^\s*\(|\)\s*$/g, '')
-      rows.push(Row(c, it, [
-        <Text key="s" color="subtle" mono size="footnote">{it.c.shortHash}</Text>,
-        <Text key="m" weight="medium"> {it.c.subject}</Text>,
-        <Text key="a" color="subtle" size="footnote">{`  ${it.c.author} · ${it.c.date}`}</Text>,
-        deco ? <Text key="d" color="claude" size="footnote">{`  ${deco}`}</Text> : null,
-      ]))
-    } else if (it.kind === 'stash') rows.push(Row(c, it, [<Text key="r" color="subtle" mono size="footnote">{it.s.ref}</Text>, <Text key="m" weight="medium"> {it.s.message}</Text>, <Text key="d" color="subtle" size="footnote">{`  ${it.s.date}`}</Text>]))
-    else if (it.kind === 'local') rows.push(Row(c, it, [<Text key="c" color="success" weight="semibold">{it.b.current ? '● ' : '  '}</Text>, <Text key="n" weight={it.b.current ? 'semibold' : 'medium'}>{it.b.name}</Text>, it.b.upstream ? <Text key="u" color="subtle" size="footnote">{`  ↔ ${it.b.upstream}`}</Text> : null, <Text key="d" color="subtle" size="footnote">{`  ${it.b.date}`}</Text>]))
+  for (const it of shown) {
+    if (it.kind === 'commit') rows.push(CommitRow(c, it, c.wide))
+    else if (it.kind === 'stash') rows.push(Row(c, it, [<Text key="r" color="subtle" mono size="footnote">{it.s.ref}</Text>, <Text key="m" weight="medium"> {it.s.message}</Text>, <Text key="d" color="subtle" size="footnote">{`  ${it.s.date}`}</Text>]))
+    else if (it.kind === 'local') rows.push(Row(c, it, [<Text key="c" color="success" weight="semibold">{it.b.current ? '✓ ' : '  '}</Text>, <Text key="n" weight={it.b.current ? 'semibold' : 'medium'}>{it.b.name}</Text>, it.b.upstream ? <Text key="u" color="subtle" size="footnote">{`  ↔ ${it.b.upstream}`}</Text> : null, <Text key="d" color="subtle" size="footnote">{`  ${it.b.date}`}</Text>]))
     else if (it.kind === 'remote') rows.push(Row(c, it, [<Text key="n" weight="medium">{it.b.name}</Text>, <Text key="d" color="subtle" size="footnote">{`  ${it.b.date}`}</Text>]))
     else if (it.kind === 'tag') rows.push(Row(c, it, [<Text key="n" weight="medium">{it.t.name}</Text>, <Text key="d" color="subtle" size="footnote">{`  ${it.t.date}`}</Text>]))
     else if (it.kind === 'worktree') {
@@ -435,22 +624,25 @@ function ListTab(c: Any) {
       rows.push(Row(c, it, [<Text key="b" weight="semibold">{it.w.branch ?? '(detached)'}</Text>, <Text key="p" color="subtle" size="footnote">{`  ${it.w.path}`}</Text>, flags ? <Text key="f" color="warning" size="footnote">{`  ${flags}`}</Text> : null]))
     } else rows.push(Row(c, it, [<Text key="s" color="subtle" mono size="footnote">{it.r.selector}</Text>, <Text key="m"> {it.r.subject}</Text>]))
   }
+  const more = list.length - shown.length
+  const canLoad = ui.tab === 'history' && (snap.hasMore && ui.more === null || ui.hasMore)
   return (
     <Box flexDirection="column" gap={1}>
       {ui.tab === 'branches' ? (
-        <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap">
-          {SUBS.map((s, i) => <Button key={`sub-${i}`} variant={ui.sub === i ? 'primary' : 'secondary'} onPress={() => { ui.sub = i; ui.sel = listFor(ui, snap)[0] ?? null; loadDetail(c, true); c.redraw() }}>{s}</Button>)}
+        <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap" paddingX={1}>
+          <Text weight="semibold">{TITLES[ui.sub] ?? ''}</Text>
           <Box flexGrow={1} />
-          <Button key="new-branch" plain dimColor onPress={() => { A.branchNew(c); c.redraw() }}>New branch…</Button>
-          <Button key="new-wt" plain dimColor onPress={() => { A.worktreeNew(c); c.redraw() }}>New worktree…</Button>
-          <Button key="prune" plain dimColor onPress={() => c.req('pruneWorktrees', { dryRun: true }, 'pruneDry')}>Prune</Button>
+          {ui.sub === 0 ? <Button key="new-branch" plain dimColor onPress={() => { A.branchNew(c); c.redraw() }}>New branch…</Button> : null}
+          {ui.sub === 3 ? <Button key="new-wt" plain dimColor onPress={() => { A.worktreeNew(c); c.redraw() }}>New worktree…</Button> : null}
+          {ui.sub === 3 ? <Button key="prune" plain dimColor onPress={() => c.req('pruneWorktrees', { dryRun: true }, 'pruneDry')}>Prune</Button> : null}
         </Box>
       ) : null}
-      <Box flexDirection="column">{rows}</Box>
-      {ui.tab === 'history' && (snap.hasMore && ui.more === null || ui.hasMore) ? (
-        <Box paddingX={1}><Button key="load-more" variant="secondary" onPress={() => c.req('log', { limit: 50, skip: (snap.commits?.length ?? 0) + (ui.more?.length ?? 0) }, 'more')}>Load more</Button></Box>
-      ) : null}
-      {ui.tab === 'stash' ? <Box paddingX={1}><Button key="stash-new" variant="secondary" onPress={() => { A.stashNew(c); c.redraw() }}>Stash changes…</Button></Box> : null}
+      <Box flexDirection="column" borderStyle="round" borderColor="promptBorder" overflow="hidden">{rows}</Box>
+      <Box flexDirection="row" gap={1} paddingX={1}>
+        {more > 0 ? <Button key="rows-more" variant="secondary" onPress={() => { ui.rows[rowsKey] = cap + 20; c.redraw() }}>{`Show ${Math.min(20, more)} more`}</Button> : null}
+        {more <= 0 && canLoad ? <Button key="load-more" variant="secondary" onPress={() => c.req('log', { limit: 50, skip: (snap.commits?.length ?? 0) + (ui.more?.length ?? 0) }, 'more')}>Load more</Button> : null}
+        {ui.tab === 'stash' ? <Button key="stash-new" variant="secondary" onPress={() => { A.stashNew(c); c.redraw() }}>Stash changes…</Button> : null}
+      </Box>
     </Box>
   )
 }
@@ -577,28 +769,122 @@ function ImageView(c: Any) {
   return <Box flexDirection="row" gap={3} flexWrap="wrap">{one('Before', img.before)}{one('After', img.after)}</Box>
 }
 
-function ShowView(c: Any, d: Any, it: Any) {
+function filesOf(patch: string) {
+  return String(patch ?? '').split(/^(?=diff --git )/m).filter((x) => x.startsWith('diff --git ')).map((chunk, i) => {
+    const m = /^diff --git a\/(.+) b\/(.+)$/m.exec(chunk)
+    const status = /^new file mode/m.test(chunk) ? 'A' : /^deleted file mode/m.test(chunk) ? 'D' : /^rename from/m.test(chunk) ? 'R' : 'M'
+    return { path: m ? m[2]! : `file ${i + 1}`, status, chunk }
+  })
+}
+
+function StatusBadge(c: Any, key: string, status: string) {
+  const { Text } = c.E
+  return <Text key={key} backgroundColor={BADGE_STATUS[status] ?? BADGE_STATUS.M} color="#1c1c1e" weight="bold" mono>{` ${STATUS_GLYPH[status] ?? '⋯'} `}</Text>
+}
+
+function Avatar(c: Any, name: string) {
   const { Box, Text } = c.E
-  const body = String(d.body ?? '').trim()
-  const parts = String(d.patch ?? '').split(/^(?=diff --git )/m).filter((x) => x.startsWith('diff --git '))
+  const initials = String(name || '?').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?'
+  let hash = 0
+  for (const ch of String(name)) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
+  return (
+    <Box key={`av-${name}`} width={6} height={3} flexShrink={0} alignItems="center" justifyContent="center" backgroundColor={AVATAR[hash % AVATAR.length]}>
+      <Text color="#ffffff" weight="bold">{initials}</Text>
+    </Box>
+  )
+}
+
+function Field(c: Any, label: string, body: Any) {
+  const { Box, Text } = c.E
+  return (
+    <Box key={`fld-${label}`} flexDirection="row" alignItems="center" gap={2}>
+      <Box width={9} flexShrink={0}><Text color="subtle" size="caption">{label}</Text></Box>
+      <Box flexDirection="row" alignItems="center" gap={1} flexWrap="wrap" flexShrink={1} minWidth={0}>{body}</Box>
+    </Box>
+  )
+}
+
+// Fork's commit detail: Commit / Changes / File Tree tabs.
+function CommitDetail(c: Any, d: Any, it: Any) {
+  const { Box, Text, Button } = c.E
+  const { ui } = c
+  const files = filesOf(d.patch)
+  const body = String(d.body ?? '').split('\n').slice(1).join('\n').trim()
+  const person = (label: string, name: string, email: string, date: string) => (
+    <Box key={`p-${label}`} flexDirection="row" alignItems="center" gap={2} flexGrow={1} flexShrink={1} minWidth={0}>
+      {Avatar(c, name)}
+      <Box flexDirection="column" flexShrink={1} minWidth={0}>
+        <Text color="subtle" size="caption">{label}</Text>
+        <Text wrap="truncate-end"><Text weight="semibold">{name}</Text><Text color="subtle" size="footnote">{`  ${email}`}</Text></Text>
+        <Text color="subtle" size="footnote" wrap="truncate-end">{date}</Text>
+      </Box>
+    </Box>
+  )
+  const tab = (id: string, label: string) => <Button key={`ct-${id}`} variant={ui.ctab === id ? 'primary' : 'secondary'} onPress={() => { ui.ctab = id; c.redraw() }}>{label}</Button>
+  let content: Any = null
+  if (ui.ctab === 'changes') {
+    content = (
+      <Box flexDirection="column" gap={2}>
+        {files.slice(0, 40).map((f, i) => (
+          <Box key={`f-${i}`} flexDirection="column" borderStyle="round" borderColor="promptBorder">
+            {FileBar(c, f.path)}
+            {PatchRows(c, f.chunk, { selectable: false, keyp: `s${i}`, max: 250 })}
+          </Box>
+        ))}
+      </Box>
+    )
+  } else if (ui.ctab === 'tree') {
+    const seen = new Set<string>()
+    const rows: Any[] = []
+    for (const f of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+      const parts = f.path.split('/')
+      parts.slice(0, -1).forEach((seg, depth) => {
+        const id = parts.slice(0, depth + 1).join('/')
+        if (seen.has(id)) return
+        seen.add(id)
+        rows.push(<Box key={`td-${id}`} flexDirection="row" gap={1} paddingLeft={depth * 2}><Text color="subtle">▾ ▭</Text><Text weight="medium">{seg}</Text></Box>)
+      })
+      rows.push(<Box key={`tf-${f.path}`} flexDirection="row" alignItems="center" gap={1} paddingLeft={(parts.length - 1) * 2}>{StatusBadge(c, `tb-${f.path}`, f.status)}<Text wrap="truncate-end">{parts[parts.length - 1]}</Text></Box>)
+    }
+    content = <Box flexDirection="column" gap={1}>{rows}</Box>
+  } else {
+    const parents: string[] = d.parents ?? []
+    content = (
+      <Box flexDirection="column" gap={2}>
+        <Box flexDirection="row" gap={3} flexWrap="wrap">
+          {person('AUTHOR', d.author, d.email, d.authorDate || d.date)}
+          {person('COMMITTER', d.committer || d.author, d.committerEmail || d.email, d.committerDate || d.authorDate || d.date)}
+        </Box>
+        {parseRefs(d.decorations, remoteNames(c.snap)).length > 0 ? Field(c, 'REFS', parseRefs(d.decorations, remoteNames(c.snap)).map((r, i) => Badge(c, `rb${i}`, r))) : null}
+        {Field(c, 'SHA', [<Text key="sha" mono size="footnote">{d.hash}</Text>, <Button key="copy-sha" plain dimColor onPress={() => c.req('copy', { text: d.hash }, 'quiet')}>Copy</Button>])}
+        {parents.length > 0 ? Field(c, 'PARENTS', parents.map((ph) => <Button key={`par-${ph}`} plain onPress={() => goCommit(c, ph)}><Text color="suggestion" underline mono size="footnote">{ph.slice(0, 7)}</Text></Button>)) : null}
+        <Box flexDirection="column" gap={1} paddingTop={1}>
+          <Text weight="semibold" size="heading" wrap="wrap">{d.subject}</Text>
+          {body ? <Text mono size="footnote" wrap="wrap">{body}</Text> : null}
+        </Box>
+        <Box flexDirection="row" alignItems="center" gap={2}>
+          <Text color="subtle" size="footnote">{`${files.length} changed file${files.length === 1 ? '' : 's'}`}</Text>
+          <Box flexGrow={1} />
+          {files.length > 0 ? <Button key="expand-all" plain dimColor onPress={() => { ui.ctab = 'changes'; c.redraw() }}>Expand All</Button> : null}
+        </Box>
+        <Box flexDirection="column" gap={1}>
+          {files.slice(0, 60).map((f) => {
+            const { name, dir } = splitPath(f.path)
+            return (
+              <Box key={`cf-${f.path}`} flexDirection="row" alignItems="center" gap={2}>
+                {StatusBadge(c, `cb-${f.path}`, f.status)}
+                <Button key={`cfb-${f.path}`} plain onPress={() => { ui.ctab = 'changes'; c.redraw() }}><Text wrap="truncate-start"><Text color="subtle">{dir}</Text><Text weight="medium">{name}</Text></Text></Button>
+              </Box>
+            )
+          })}
+        </Box>
+      </Box>
+    )
+  }
   return (
     <Box flexDirection="column" gap={2}>
-      <Box flexDirection="column" gap={1} paddingX={1}>
-        <Text weight="semibold" size="heading">{d.subject}</Text>
-        {body ? <Text>{body}</Text> : null}
-        <Text color="subtle" size="footnote">{`${d.author} <${d.email}>  ·  ${d.date}  ·  ${String(d.hash ?? '').slice(0, 10)}`}</Text>
-      </Box>
-      <Text color="subtle" size="footnote">{`${parts.length} changed file${parts.length === 1 ? '' : 's'}`}</Text>
-      {parts.slice(0, 40).map((chunk, i) => {
-        const m = /^diff --git a\/(.+) b\/(.+)$/m.exec(chunk)
-        const path = m ? m[2]! : `file ${i + 1}`
-        return (
-          <Box key={`f-${i}`} flexDirection="column" borderStyle="round" borderColor="promptBorder">
-            {FileBar(c, path)}
-            {PatchRows(c, chunk, { selectable: false, keyp: `s${i}`, max: 250 })}
-          </Box>
-        )
-      })}
+      <Box flexDirection="row" gap={1}>{tab('commit', 'Commit')}{tab('changes', 'Changes')}{tab('tree', 'File Tree')}</Box>
+      {content}
     </Box>
   )
 }
@@ -654,7 +940,7 @@ function Detail(c: Any) {
   if (d?.error) body = <Text color="error">{d.error}</Text>
   else if (it.kind === 'file' && IMAGE.test(it.path)) return <Box flexDirection="column" gap={1}>{FileBar(c, it.path)}<Box padding={2}>{ImageView(c)}</Box></Box>
   else if (it.kind === 'file' && d?.patch !== undefined) return <Box flexDirection="column" gap={1}>{DiffView(c, d, it)}</Box>
-  else if ((it.kind === 'commit' || it.kind === 'stash' || it.kind === 'tag' || it.kind === 'reflog') && d?.subject !== undefined) body = ShowView(c, d, it)
+  else if ((it.kind === 'commit' || it.kind === 'stash' || it.kind === 'tag' || it.kind === 'reflog') && d?.subject !== undefined) return <Box flexDirection="column" gap={2}>{Actions(c, it, d)}{CommitDetail(c, d, it)}</Box>
   else if (d?.commits) body = <Box flexDirection="column">{d.commits.map((x: Any) => <Text key={x.hash} size="footnote"><Text color="subtle" mono>{x.shortHash}</Text>{`  ${x.subject}  ·  ${x.author}, ${x.date}`}</Text>)}</Box>
   else if (it.kind === 'worktree') body = <Text color="subtle">{`${it.w.locked ? 'Locked' + (it.w.lockReason ? ': ' + it.w.lockReason : '') + '. ' : ''}${it.w.prunable ? 'Stale: ' + it.w.prunableReason : ''}`}</Text>
   return (
@@ -748,10 +1034,24 @@ export function GitView(E: Any, props: Any, ui: Any, act: Any) {
     }
   } else if (ui.sel === null && ui.detail === null) initSelection(c)
 
+  const cols = Number(props.cols ?? 120)
+  c.wide = cols * (ui.sidebar ? 0.7 : 1) >= 82
+  const side = ui.sidebar
+  const main = ui.tab === 'changes' && c.wide ? (
+    <Box flexDirection="row" gap={2} alignItems="flex-start" width="100%" overflow="hidden">
+      <Box flexDirection="column" width="40%" minWidth="40%" flexGrow={0} flexShrink={0} gap={1} overflow="hidden">{ChangesList(c)}</Box>
+      <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">{Detail(c)}</Box>
+    </Box>
+  ) : (
+    <Box flexDirection="column" gap={2} width="100%" overflow="hidden">
+      {ui.tab === 'changes' ? ChangesList(c) : ListTab(c)}
+      <Box flexDirection="column" backgroundColor={SURFACE} padding={1} overflow="hidden">{Detail(c)}</Box>
+    </Box>
+  )
   return (
-    <Box flexDirection="column" gap={2} padding={2}>
-      {Header(c)}
-      {Tabs(c)}
+    <Box flexDirection="column" gap={1} padding={1}>
+      {RepoTabs(c)}
+      {Toolbar(c)}
       {ui.notice ? (
         <Box flexDirection="row" alignItems="center" gap={2} borderStyle="round" borderColor="error" paddingX={1}>
           <Text color="error" wrap="wrap">{ui.notice}</Text>
@@ -760,9 +1060,9 @@ export function GitView(E: Any, props: Any, ui: Any, act: Any) {
         </Box>
       ) : null}
       {ui.dialog ? Dialog(c) : null}
-      <Box flexDirection="row" gap={2} alignItems="flex-start" width="100%" overflow="hidden">
-        <Box flexDirection="column" width="38%" minWidth="38%" flexGrow={0} flexShrink={0} gap={1} overflow="hidden">{ui.tab === 'changes' ? ChangesList(c) : ListTab(c)}</Box>
-        <Box flexDirection="column" width="58%" flexGrow={0} flexShrink={1} minWidth={0} overflow="hidden">{Detail(c)}</Box>
+      <Box flexDirection="row" gap={1} alignItems="flex-start" width="100%" overflow="hidden">
+        {side ? <Box flexDirection="column" width="27%" minWidth="27%" flexGrow={0} flexShrink={0} overflow="hidden" backgroundColor={SURFACE}>{Sidebar(c)}</Box> : null}
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">{main}</Box>
       </Box>
       {Activity(c)}
     </Box>

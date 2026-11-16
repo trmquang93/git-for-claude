@@ -319,7 +319,7 @@ export const register: Register = on => {
           .finally(() => { pending -= 1; redraw() })
       },
     }
-    return GitView(E, { dir: v.dir, rev: v.rev, snap: v.snap, image: v.image, error: v.error, recents, busy: pending > 0 }, UI, act)
+    return GitView(E, { cols: (e as any).props?.bodyColumns, dir: v.dir, rev: v.rev, snap: v.snap, image: v.image, error: v.error, recents, busy: pending > 0 }, UI, act)
   })
 }
 
