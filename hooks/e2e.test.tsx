@@ -120,7 +120,7 @@ test('tabs and header buttons work', async ($, on) => {
   await ui.unmount()
 })
 
-test('the pane opens by itself when the session folder is a git repository', async ($, on) => {
+test('a new session in a git repository does not open the pane by itself', async ($, on) => {
   on('session.start', (_: any, e: any) => ({ cwd: e.cwd }))
   on('process.run', (_: any, e: any) => ({ value: answer(e) }))
   on('store.get', () => ({ value: [] }))
@@ -130,8 +130,8 @@ test('the pane opens by itself when the session folder is a git repository', asy
   opened = 0
   await $.session.start({ cwd: FIX, surface: 'desktop', isInteractive: true })
   await $.clock?.sleep?.(10)
-  for (let i = 0; i < 20 && opened === 0; i++) await new Promise(r => setTimeout(r, 10))
-  expect(opened).toBe(1)
+  for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 10))
+  expect(opened).toBe(0)
 })
 
 test('the Open Git button above the prompt opens the pane', async ($, on) => {

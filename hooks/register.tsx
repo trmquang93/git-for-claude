@@ -229,7 +229,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'git', description: 'Open the Git pane (files, staging, commits, branches, worktrees)' })
     const result = await next(e)
-    // Open the pane by itself when the session folder is a git repository (once per session).
+    // Detect the repository so the prompt band shows branch and changes; the pane opens only on /git or the Git button.
     void (async () => {
       const v = await read($, view)
       if (v.autoOpened) return
@@ -238,7 +238,6 @@ export const register: Register = on => {
       if (r.exitCode !== 0) return
       const root = r.stdout.trim()
       await update($, view, (cur: View) => ({ ...cur, dir: root, autoOpened: true }))
-      await $.ui.open({ id: PANE, title: 'Git' })
       await refresh($, root)
       startPolling($)
     })().catch(() => {})
