@@ -710,7 +710,7 @@ function CommitRow(c: Any, it: Any, wide: boolean, g: Any, gw: number) {
   )
   return (
     <Box key={`row-${it.key}`} flexDirection="row" alignItems="center" gap={2} paddingX={1} height={undefined} backgroundColor={on ? SEL_BG : undefined}>
-      {g ? <Box key={`g-${it.key}`} width={gw} height={ROW_H} flexShrink={0}><Svg source={graphSvg(g, gw, on)} alt="commit graph" width={gw} height={ROW_H} /></Box> : cell('g', <Text color={on ? SEL_FG : YELLOW} weight="bold">{merge ? '⊕' : '●'}</Text>, { width: 3 })}
+      {g ? <Box key={`g-${it.key}`} flexShrink={0}><Svg source={graphSvg(g, gw, on)} alt="commit graph" width={gw} height={ROW_H} /></Box> : cell('g', <Text color={on ? SEL_FG : YELLOW} weight="bold">{merge ? '⊕' : '●'}</Text>, { width: 3 })}
       {cell('s', subject, { grow: true })}
       {wide ? cell('a', <Text wrap="truncate-end" color={fg} size="footnote">{it.c.author}</Text>, { width: 16 }) : null}
       {wide ? cell('h', <Text mono color={dim} size="footnote">{it.c.shortHash}</Text>, { width: 9 }) : null}
