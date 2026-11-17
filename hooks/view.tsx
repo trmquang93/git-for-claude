@@ -296,6 +296,7 @@ function RepoTabs(c: Any) {
           <Box key={`rt-${i}`} flexDirection="row" alignItems="center" gap={1} paddingX={2} backgroundColor={on ? SURFACE : undefined} borderStyle={on ? 'round' : undefined} borderColor="promptBorder">
             <Button key={`rtb-${i}`} plain dimColor={!on} onPress={() => { if (!on) c.req('setDir', { dir: d }, 'quiet') }}><Text weight={on ? 'semibold' : 'regular'}>{`${name}${on && dirty ? '*' : ''}`}</Text></Button>
             {on && dirty ? <Text color="error" size="footnote">●</Text> : null}
+            {dirs.length > 1 ? <Button key={`rtx-${i}`} plain dimColor onPress={() => c.req('closeRepo', { dir: d }, 'quiet')}><Text size="footnote">×</Text></Button> : null}
           </Box>
         )
       })}

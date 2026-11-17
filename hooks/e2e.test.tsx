@@ -14,6 +14,7 @@ const calls: string[][] = []
 const stdins: string[] = []
 const stored: string[] = []
 let BIG = ''
+let RECENTS: string[] = []
 function answer(e: any) {
   const argv = e.argv
   const init = e.init ?? {}
@@ -37,7 +38,7 @@ async function setup($: any, on: any) {
   on('process.run', (_: any, e: any) => ({ value: answer(e) }))
   on('fs.stat', () => ({ value: { kind: 'file', size: 70, mtimeMs: 0, isLink: false } }))
   on('fs.read', () => ({ value: { base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' } }))
-  on('store.get', () => ({ value: [] }))
+  on('store.get', () => ({ value: RECENTS }))
   on('store.set', (_: any, e: any) => { stored.push(JSON.stringify(e)); return { value: undefined } })
   on('command.register', () => ({ value: { command: 'git' } }))
   on('ui.open', () => { opened += 1; return { value: { isPlaced: true } } })
@@ -231,5 +232,18 @@ test('double press on a worktree opens it as a repository tab and keeps the curr
   await ui.press({ key })
   await settle(ui)
   expect(stored.some(x => x.includes(FIX))).toBe(true)
+  await ui.unmount()
+})
+
+test('the x on a repository tab closes it and forgets the folder', async ($, on) => {
+  stored.length = 0
+  RECENTS = ['/tmp/other-repo']
+  await setup($, on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await settle(ui)
+  expect(await texts(ui)).toContain('other-repo')
+  await press(ui, 'rtx-1')
+  expect(stored.some(x => x.includes('"value":[]'))).toBe(true)
+  RECENTS = []
   await ui.unmount()
 })

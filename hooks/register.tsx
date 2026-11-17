@@ -8,7 +8,7 @@ import { GitView, initUi, onReply } from './view'
 const PANE = 'git'
 const STORE_RECENTS = 'git-for-claude/recentRepos'
 const EDIT_TOOLS = new Set(['Bash', 'Edit', 'Write', 'NotebookEdit', 'MultiEdit'])
-const QUIET = new Set(['diff', 'show', 'log', 'status', 'branches', 'lastCommitMessage', 'image', 'previewImage', 'clearImage', 'refresh', 'copy', 'sendToChat', 'setDir', 'stashList', 'tags', 'remotes', 'reflog', 'worktrees'])
+const QUIET = new Set(['diff', 'show', 'log', 'status', 'branches', 'lastCommitMessage', 'image', 'previewImage', 'clearImage', 'refresh', 'copy', 'sendToChat', 'setDir', 'closeRepo', 'stashList', 'tags', 'remotes', 'reflog', 'worktrees'])
 const TEXT_CAP = 60000
 const PROPS_CAP = 90000
 
@@ -185,6 +185,19 @@ async function handle($: any, e: any, msg: any) {
         await update($, view, (cur: View) => ({ ...cur, dir: st.root ?? snapDir, image: null }))
         snapDir = st.root ?? snapDir
         reload = true
+        break
+      }
+      case 'closeRepo': {
+        const gone = String(request.dir ?? '')
+        const list = (((await $.store.get(STORE_RECENTS)) as string[] | undefined) ?? []).filter((p) => p !== gone)
+        await $.store.set(STORE_RECENTS, list)
+        if (gone === v.dir && list[0] !== undefined) {
+          const st = await g.status({ dir: list[0] })
+          snapDir = st.root ?? list[0]
+          await rememberRepo($, snapDir)
+          await update($, view, (cur: View) => ({ ...cur, dir: snapDir, image: null }))
+          reload = true
+        }
         break
       }
       case 'copy':
